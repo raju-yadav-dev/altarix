@@ -586,6 +586,27 @@ public class MainController {
         });
     }
 
+    private void updateModalBackdropPreview(boolean blurEnabled, double blurRadius) {
+        if (windowRoot == null || appShell == null || modalDepth <= 0) {
+            return;
+        }
+        ensureModalOverlay();
+        if (modalOverlay == null) {
+            return;
+        }
+
+        double clampedRadius = Math.max(0.0, Math.min(12.0, blurRadius));
+        double overlayOpacity = blurEnabled && clampedRadius > 0.0 ? 0.24 : 0.0;
+
+        if (!windowRoot.getChildren().contains(modalOverlay)) {
+            windowRoot.getChildren().add(modalOverlay);
+        }
+        modalOverlay.toFront();
+        modalOverlay.setVisible(true);
+        appShell.setEffect(modalBlur);
+        animateBackdrop(blurEnabled ? clampedRadius : 0.0, overlayOpacity, null);
+    }
+
     private void animateBackdrop(double blurRadius, double overlayOpacity, Runnable onFinished) {
         if (modalBackdropTimeline != null) {
             modalBackdropTimeline.stop();
@@ -733,6 +754,8 @@ public class MainController {
             SettingsDialogController controller = loader.getController();
             controller.setDialogMode(mode);
             controller.setOnSave(this::applySettingsFromManager);
+                controller.setBlurPreviewListener(preview ->
+                    updateModalBackdropPreview(preview.enabled(), preview.radius()));
             try {
                 javafx.application.HostServices hs = (javafx.application.HostServices)
                         stage.getProperties().get("hostServices");

@@ -2456,7 +2456,7 @@
 
 .inline-thread-group {
     -fx-padding: 0 0 0 6;
-    -fx-spacing: 2;
+    -fx-spacing: 0;
 }
 
 .inline-discussion-row {
@@ -2475,6 +2475,10 @@
     -fx-text-fill: -app-text-secondary;
     -fx-font-size: 12px;
     -fx-padding: 0 0 0 10;
+    -fx-line-spacing: 0;
+    -fx-min-height: 16;
+    -fx-pref-height: 16;
+    -fx-max-height: 16;
     -fx-cursor: hand;
     -fx-opacity: 0.72;
 }
@@ -2546,7 +2550,11 @@
 .inline-discussion-collapsed {
     -fx-text-fill: -app-text-secondary;
     -fx-font-size: 12px;
-    -fx-padding: 4 0;
+    -fx-padding: 0;
+    -fx-line-spacing: 0;
+    -fx-min-height: 16;
+    -fx-pref-height: 16;
+    -fx-max-height: 16;
     -fx-cursor: hand;
     -fx-opacity: 0.6;
 }

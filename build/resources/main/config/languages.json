@@ -64,5 +64,95 @@
     "detectCommands": ["bash", "sh"],
     "needsCompilation": false,
     "timeout": 10
+  },
+  "typescript": {
+    "displayName": "TypeScript",
+    "extensions": [".ts"],
+    "aliases": ["ts", "ts-node"],
+    "command": "ts-node {file}",
+    "detectCommands": ["ts-node"],
+    "needsCompilation": false,
+    "timeout": 10
+  },
+  "ruby": {
+    "displayName": "Ruby",
+    "extensions": [".rb"],
+    "aliases": ["rb", "ruby"],
+    "command": "ruby {file}",
+    "detectCommands": ["ruby"],
+    "needsCompilation": false,
+    "timeout": 10
+  },
+  "php": {
+    "displayName": "PHP",
+    "extensions": [".php"],
+    "aliases": ["php"],
+    "command": "php {file}",
+    "detectCommands": ["php"],
+    "needsCompilation": false,
+    "timeout": 10
+  },
+  "lua": {
+    "displayName": "Lua",
+    "extensions": [".lua"],
+    "aliases": ["lua"],
+    "command": "lua {file}",
+    "detectCommands": ["lua"],
+    "needsCompilation": false,
+    "timeout": 10
+  },
+  "perl": {
+    "displayName": "Perl",
+    "extensions": [".pl"],
+    "aliases": ["pl", "perl"],
+    "command": "perl {file}",
+    "detectCommands": ["perl"],
+    "needsCompilation": false,
+    "timeout": 10
+  },
+  "r": {
+    "displayName": "R",
+    "extensions": [".r"],
+    "aliases": ["r", "rscript"],
+    "command": "Rscript {file}",
+    "detectCommands": ["Rscript"],
+    "needsCompilation": false,
+    "timeout": 10
+  },
+  "dart": {
+    "displayName": "Dart",
+    "extensions": [".dart"],
+    "aliases": ["dart"],
+    "command": "dart {file}",
+    "detectCommands": ["dart"],
+    "needsCompilation": false,
+    "timeout": 10
+  },
+  "groovy": {
+    "displayName": "Groovy",
+    "extensions": [".groovy"],
+    "aliases": ["groovy", "gvy"],
+    "command": "groovy {file}",
+    "detectCommands": ["groovy"],
+    "needsCompilation": false,
+    "timeout": 10
+  },
+  "swift": {
+    "displayName": "Swift",
+    "extensions": [".swift"],
+    "aliases": ["swift"],
+    "command": "swift {file}",
+    "detectCommands": ["swift"],
+    "needsCompilation": false,
+    "timeout": 10
+  },
+  "julia": {
+    "displayName": "Julia",
+    "extensions": [".jl"],
+    "aliases": ["jl", "julia"],
+    "command": "julia {file}",
+    "detectCommands": ["julia"],
+    "needsCompilation": false,
+    "timeout": 10
   }
 }

@@ -28,6 +28,7 @@ public class LanguageConfigService {
     private final Map<String, String> aliasToKey = new HashMap<>();
     private final Map<String, Boolean> commandAvailabilityCache = new ConcurrentHashMap<>();
     private final Map<String, List<String>> runtimeResolutionCache = new ConcurrentHashMap<>();
+    private final SettingsManager settingsManager = SettingsManager.getInstance();
 
     public LanguageConfigService() {
         loadConfig();
@@ -130,12 +131,44 @@ public class LanguageConfigService {
 
     /** Resolve the first available command for a language from its detectCommands list. */
     public String resolveCommand(String languageKey) {
+        String configuredPath = resolveConfiguredRuntimeCommand(languageKey);
+        if (configuredPath != null) {
+            return configuredPath;
+        }
+
         LanguageEntry lang = languagesByKey.get(languageKey);
         if (lang == null || lang.detectCommands == null) return null;
         for (String cmd : lang.detectCommands) {
             if (isCommandAvailable(cmd)) return cmd;
         }
         return null;
+    }
+
+    private String resolveConfiguredRuntimeCommand(String languageKey) {
+        String runtimeKey = switch (languageKey) {
+            case "python" -> "runtime.pythonPath";
+            case "javascript" -> "runtime.nodePath";
+            case "java" -> "runtime.javaPath";
+            case "c", "cpp" -> "runtime.gccPath";
+            case "typescript" -> "runtime.tsNodePath";
+            case "ruby" -> "runtime.rubyPath";
+            case "php" -> "runtime.phpPath";
+            case "lua" -> "runtime.luaPath";
+            case "perl" -> "runtime.perlPath";
+            case "r" -> "runtime.rPath";
+            case "dart" -> "runtime.dartPath";
+            case "groovy" -> "runtime.groovyPath";
+            case "swift" -> "runtime.swiftPath";
+            case "julia" -> "runtime.juliaPath";
+            default -> null;
+        };
+
+        if (runtimeKey == null) {
+            return null;
+        }
+
+        String configured = settingsManager.getString(runtimeKey, "").trim();
+        return configured.isEmpty() ? null : configured;
     }
 
     /**

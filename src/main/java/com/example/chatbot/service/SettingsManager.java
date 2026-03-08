@@ -18,10 +18,10 @@ import java.util.function.Consumer;
  * Settings are organized by dot-separated keys (e.g. "appearance.uiFontSize").
  */
 public final class SettingsManager {
-    private static final SettingsManager INSTANCE = new SettingsManager();
     private static final String CONFIG_FILE_NAME = "cortex-settings.json";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Type MAP_TYPE = new TypeToken<LinkedHashMap<String, Object>>() {}.getType();
+    private static final SettingsManager INSTANCE = new SettingsManager();
 
     private final Map<String, Object> settings = new LinkedHashMap<>();
     private final Map<String, Consumer<Object>> listeners = new ConcurrentHashMap<>();
@@ -71,6 +71,16 @@ public final class SettingsManager {
         putDefault("runtime.nodePath", "");
         putDefault("runtime.javaPath", "");
         putDefault("runtime.gccPath", "");
+        putDefault("runtime.tsNodePath", "");
+        putDefault("runtime.rubyPath", "");
+        putDefault("runtime.phpPath", "");
+        putDefault("runtime.luaPath", "");
+        putDefault("runtime.perlPath", "");
+        putDefault("runtime.rPath", "");
+        putDefault("runtime.dartPath", "");
+        putDefault("runtime.groovyPath", "");
+        putDefault("runtime.swiftPath", "");
+        putDefault("runtime.juliaPath", "");
 
         // AI Model
         putDefault("ai.apiKey", "");

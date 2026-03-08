@@ -42,6 +42,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
+import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.stage.Window;
@@ -95,7 +96,11 @@ public class ChatController {
     @FXML
     private VBox terminalPane;
     @FXML
+    private Label terminalTitleLabel;
+    @FXML
     private Label terminalStatusLabel;
+    @FXML
+    private StackPane terminalContentHost;
     @FXML
     private TextArea terminalOutputArea;
     @FXML
@@ -152,6 +157,13 @@ public class ChatController {
     private Node streamingActiveNode;
     private VBox streamingActiveVBox;
     private boolean streamingActiveIsCode;
+    private WebView webPreviewView;
+    private PanelMode panelMode = PanelMode.TERMINAL;
+
+    private enum PanelMode {
+        TERMINAL,
+        WEB_PREVIEW
+    }
 
     private enum TerminalDockPosition {
         LEFT,
@@ -243,6 +255,7 @@ public class ChatController {
         initializeTerminalDockIcons();
         updateTerminalDockButtons();
         initializeTerminalConsole();
+        initializeWebPreview();
         hideTerminalPanel();
         setTerminalStatus("Terminal hidden");
     }
@@ -540,7 +553,7 @@ public class ChatController {
                 String lang = nl >= 0 ? raw.substring(0, nl).trim() : raw.trim();
                 String code = nl >= 0 ? raw.substring(nl + 1).stripTrailing() : "";
                 if (lang.isEmpty()) lang = "text";
-                rendered = createCodeBlock(lang, code);
+                rendered = createCodeBlock(lang, code, fullText);
             } else {
                 String trimmed = raw.trim();
                 if (!trimmed.isEmpty()) {
@@ -832,7 +845,7 @@ public class ChatController {
             insertInlineQuestion(new SelectedLineContext(context, bubbleWrapper, bubbleWrapper, null));
         });
 
-        contextMenu.getItems().addAll(copyItem, new SeparatorMenuItem(), askItem);
+        contextMenu.getItems().addAll(copyItem, askItem);
         contextMenu.getStyleClass().add("bubble-context-menu");
 
         // Event filter intercepts context-menu requests before child TextAreas handle them
@@ -863,22 +876,34 @@ public class ChatController {
             if (!(child instanceof TextArea selectedArea)) {
                 continue;
             }
-            String selectedText = selectedArea.getSelectedText();
-            if (selectedText == null || selectedText.isBlank()) {
-                continue;
+            SelectedLineContext context = resolveSelectedLineContext(selectedArea);
+            if (context != null) {
+                return context;
             }
+        }
+        return null;
+    }
 
-            Node lineContainerNode = selectedArea;
-            while (lineContainerNode != null
-                    && (!lineContainerNode.getStyleClass().contains("message-line-container")
-                    || !(lineContainerNode.getParent() instanceof VBox))) {
-                lineContainerNode = lineContainerNode.getParent();
-            }
+    private SelectedLineContext resolveSelectedLineContext(TextArea selectedArea) {
+        if (selectedArea == null) {
+            return null;
+        }
 
-            if (lineContainerNode != null && lineContainerNode.getParent() instanceof VBox markdownContainer
-                    && markdownContainer.getStyleClass().contains("message-markdown")) {
-                return new SelectedLineContext(selectedText, lineContainerNode, markdownContainer, selectedArea);
-            }
+        String selectedText = selectedArea.getSelectedText();
+        if (selectedText == null || selectedText.isBlank()) {
+            return null;
+        }
+
+        Node lineContainerNode = selectedArea;
+        while (lineContainerNode != null
+                && (!lineContainerNode.getStyleClass().contains("message-line-container")
+                || !(lineContainerNode.getParent() instanceof VBox))) {
+            lineContainerNode = lineContainerNode.getParent();
+        }
+
+        if (lineContainerNode != null && lineContainerNode.getParent() instanceof VBox markdownContainer
+                && markdownContainer.getStyleClass().contains("message-markdown")) {
+            return new SelectedLineContext(selectedText, lineContainerNode, markdownContainer, selectedArea);
         }
         return null;
     }
@@ -891,6 +916,17 @@ public class ChatController {
         if (targetContainer == null || selectedLineNode == null) {
             return;
         }
+
+        final double previousScroll = scrollPane != null ? scrollPane.getVvalue() : -1;
+
+        // Keep only one inline ask widget per markdown block.
+        List<Node> staleThreads = new ArrayList<>();
+        for (Node child : targetContainer.getChildren()) {
+            if (child.getStyleClass().contains("inline-thread-group")) {
+                staleThreads.add(child);
+            }
+        }
+        targetContainer.getChildren().removeAll(staleThreads);
 
         VBox discussionGroup = new VBox(4);
         discussionGroup.getStyleClass().add("inline-thread-group");
@@ -906,21 +942,13 @@ public class ChatController {
         discussion.getStyleClass().add("inline-discussion");
         threadLine.prefHeightProperty().bind(discussion.heightProperty());
 
-        // Quoted selection
-        String displayText = selectedText.length() > 200
-                ? selectedText.substring(0, 197) + "..."
-                : selectedText;
-        Label quote = new Label("\u201C " + displayText + " \u201D");
-        quote.setWrapText(true);
-        quote.setMaxWidth(500);
-        quote.getStyleClass().add("inline-discussion-quote");
-
         Button collapseThreadBtn = new Button("\u2212");
         collapseThreadBtn.getStyleClass().add("inline-discussion-collapse-btn");
         collapseThreadBtn.setFocusTraversable(false);
 
-        HBox headerRow = new HBox(8, quote, new Region(), collapseThreadBtn);
-        HBox.setHgrow(headerRow.getChildren().get(1), Priority.ALWAYS);
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        HBox headerRow = new HBox(8, headerSpacer, collapseThreadBtn);
 
         // Question input
         TextField questionField = new TextField();
@@ -936,25 +964,31 @@ public class ChatController {
 
         Label collapsedPlaceholder = new Label("...");
         collapsedPlaceholder.getStyleClass().add("inline-thread-placeholder");
-        collapsedPlaceholder.setVisible(false);
-        collapsedPlaceholder.setManaged(false);
+        collapsedPlaceholder.setVisible(true);
+        collapsedPlaceholder.setManaged(true);
+
+        ContextMenu collapsedMenu = new ContextMenu();
+        MenuItem deleteInlineItem = new MenuItem("Delete");
+        deleteInlineItem.setOnAction(e -> targetContainer.getChildren().remove(discussionGroup));
+        collapsedMenu.getItems().add(deleteInlineItem);
 
         collapseThreadBtn.setOnAction(e -> {
-            discussionRow.setVisible(false);
-            discussionRow.setManaged(false);
-            collapsedPlaceholder.setVisible(true);
-            collapsedPlaceholder.setManaged(true);
+            collapsedMenu.hide();
+            // Keep collapsed state to a single compact row.
+            discussionGroup.getChildren().setAll(collapsedPlaceholder);
         });
 
         collapsedPlaceholder.setOnMouseClicked(e -> {
-            discussionRow.setVisible(true);
-            discussionRow.setManaged(true);
-            collapsedPlaceholder.setVisible(false);
-            collapsedPlaceholder.setManaged(false);
+            if (e.getButton() == MouseButton.SECONDARY) {
+                collapsedMenu.show(collapsedPlaceholder, e.getScreenX(), e.getScreenY());
+                return;
+            }
+            discussionGroup.getChildren().setAll(discussionRow);
+            collapsedMenu.hide();
         });
 
         discussionRow.getChildren().addAll(threadLine, discussion);
-        discussionGroup.getChildren().addAll(discussionRow, collapsedPlaceholder);
+        discussionGroup.getChildren().addAll(discussionRow);
 
         // Submit on Enter
         questionField.setOnKeyPressed(event -> {
@@ -981,7 +1015,12 @@ public class ChatController {
         ft.setFromValue(0);
         ft.setToValue(1);
         ft.play();
-        scrollToBottom();
+        Platform.runLater(() -> {
+            questionField.requestFocus();
+            if (scrollPane != null && previousScroll >= 0) {
+                scrollPane.setVvalue(previousScroll);
+            }
+        });
     }
 
     private record SelectedLineContext(String selectedText, Node lineNode, Node markdownContainer, TextArea selectedArea) {}
@@ -1004,42 +1043,15 @@ public class ChatController {
                     VBox answerBody = new VBox(answerContent);
                     answerBody.getStyleClass().add("inline-discussion-answer-body");
 
-                    // Collapse placeholder
-                    Label collapsePlaceholder = new Label("\u22EF");
-                    collapsePlaceholder.getStyleClass().add("inline-discussion-collapsed");
-                    collapsePlaceholder.setVisible(false);
-                    collapsePlaceholder.setManaged(false);
-
-                    // Toggle collapse button
-                    Button collapseBtn = new Button("\u25B2");
-                    collapseBtn.getStyleClass().add("inline-discussion-collapse-btn");
-                    collapseBtn.setFocusTraversable(false);
-                    collapseBtn.setOnAction(e -> {
-                        boolean visible = answerBody.isVisible();
-                        answerBody.setVisible(!visible);
-                        answerBody.setManaged(!visible);
-                        collapsePlaceholder.setVisible(visible);
-                        collapsePlaceholder.setManaged(visible);
-                        collapseBtn.setText(visible ? "\u25BC" : "\u25B2");
-                    });
-
-                    collapsePlaceholder.setOnMouseClicked(e -> {
-                        answerBody.setVisible(true);
-                        answerBody.setManaged(true);
-                        collapsePlaceholder.setVisible(false);
-                        collapsePlaceholder.setManaged(false);
-                        collapseBtn.setText("\u25B2");
-                    });
-
                     HBox headerRow = new HBox(6);
                     headerRow.setAlignment(Pos.CENTER_LEFT);
                     Label aiLabel = new Label("Cortex");
                     aiLabel.getStyleClass().add("inline-discussion-ai-label");
                     Region hSpacer = new Region();
                     HBox.setHgrow(hSpacer, Priority.ALWAYS);
-                    headerRow.getChildren().addAll(aiLabel, hSpacer, collapseBtn);
+                    headerRow.getChildren().addAll(aiLabel, hSpacer);
 
-                    answerBox.getChildren().addAll(headerRow, answerBody, collapsePlaceholder);
+                    answerBox.getChildren().setAll(headerRow, answerBody);
                 }));
     }
 
@@ -1144,7 +1156,7 @@ public class ChatController {
 
             String language = matcher.group(1) == null ? "text" : matcher.group(1).trim();
             String code = matcher.group(2) == null ? "" : matcher.group(2).stripTrailing();
-            container.getChildren().add(createCodeBlock(language, code));
+            container.getChildren().add(createCodeBlock(language, code, safeContent));
             current = matcher.end();
         }
 
@@ -1222,7 +1234,7 @@ public class ChatController {
         return text;
     }
 
-    private VBox createCodeBlock(String language, String code) {
+    private VBox createCodeBlock(String language, String code, String sourceMessageContent) {
         Label languageLabel = new Label(language);
         languageLabel.getStyleClass().add("code-language");
 
@@ -1232,10 +1244,11 @@ public class ChatController {
         copyButton.setOnAction(event -> copyCodeToClipboard(code));
 
         String normalizedLanguage = normalizeLanguage(language);
-        Button runButton = new Button("Run");
+        boolean webPreviewLanguage = isWebPreviewLanguage(normalizedLanguage);
+        Button runButton = new Button(webPreviewLanguage ? "Preview" : "Run");
         runButton.getStyleClass().addAll("message-code-copy", "message-code-run");
         runButton.setFocusTraversable(false);
-        runButton.setDisable(!isRuntimeAvailableForLanguage(normalizedLanguage));
+        runButton.setDisable(webPreviewLanguage ? false : !isRuntimeAvailableForLanguage(normalizedLanguage));
 
         Button stopButton = new Button("x");
         stopButton.getStyleClass().addAll("message-code-copy", "message-code-stop");
@@ -1244,7 +1257,13 @@ public class ChatController {
         stopButton.setManaged(false);
         stopButton.setOnAction(event -> stopActiveExecution());
 
-        runButton.setOnAction(event -> runCodeSnippet(normalizedLanguage, code, runButton, stopButton));
+        runButton.setOnAction(event -> {
+            if (webPreviewLanguage) {
+                previewWebSnippet(normalizedLanguage, code, sourceMessageContent, runButton);
+                return;
+            }
+            runCodeSnippet(normalizedLanguage, code, runButton, stopButton);
+        });
 
         Region headerSpacer = new Region();
         HBox.setHgrow(headerSpacer, Priority.ALWAYS);
@@ -1302,6 +1321,7 @@ public class ChatController {
     }
 
     private void runCodeSnippet(String language, String code, Button runButton, Button stopButton) {
+        switchToTerminalMode();
         if (activeExecution != null) {
             setTerminalStatus("Run in progress");
             appendTerminalLine("[Run] Another command is already running. Stop it first.");
@@ -1407,6 +1427,150 @@ public class ChatController {
         clearTerminal();
     }
 
+    private void initializeWebPreview() {
+        if (terminalContentHost == null || webPreviewView != null) {
+            return;
+        }
+        webPreviewView = new WebView();
+        webPreviewView.getStyleClass().add("web-preview");
+        webPreviewView.setContextMenuEnabled(false);
+        webPreviewView.setVisible(false);
+        webPreviewView.setManaged(false);
+        terminalContentHost.getChildren().add(webPreviewView);
+    }
+
+    private boolean isWebPreviewLanguage(String normalizedLanguage) {
+        String safe = normalizedLanguage == null ? "" : normalizedLanguage.trim().toLowerCase(Locale.ROOT);
+        return safe.equals("html") || safe.equals("css") || safe.equals("javascript") || safe.equals("js");
+    }
+
+    private void previewWebSnippet(String language, String code, String messageContent, Button triggerButton) {
+        initializeWebPreview();
+        if (webPreviewView == null) {
+            showNotification("✗ Web preview is unavailable");
+            return;
+        }
+
+        String mergedHtml = buildMergedWebPreviewHtml(language, code, messageContent);
+        switchToWebPreviewMode();
+        openTerminalPanel();
+        webPreviewView.getEngine().loadContent(mergedHtml, "text/html");
+        setTerminalStatus("Live preview active");
+        if (triggerButton != null) {
+            triggerButton.setText("Preview");
+        }
+    }
+
+    private String buildMergedWebPreviewHtml(String language, String code, String messageContent) {
+        String html = "";
+        String css = "";
+        String js = "";
+
+        String safeContent = messageContent == null ? "" : messageContent;
+        Matcher matcher = CODE_BLOCK_PATTERN.matcher(safeContent);
+        while (matcher.find()) {
+            String blockLanguage = normalizeLanguage(matcher.group(1) == null ? "text" : matcher.group(1));
+            String blockCode = matcher.group(2) == null ? "" : matcher.group(2).strip();
+            if ("html".equals(blockLanguage)) {
+                html = blockCode;
+            } else if ("css".equals(blockLanguage)) {
+                css = blockCode;
+            } else if ("javascript".equals(blockLanguage) || "js".equals(blockLanguage)) {
+                js = blockCode;
+            }
+        }
+
+        String normalizedInputLanguage = normalizeLanguage(language);
+        String safeCode = code == null ? "" : code;
+        if (html.isBlank() && "html".equals(normalizedInputLanguage)) {
+            html = safeCode;
+        }
+        if (css.isBlank() && "css".equals(normalizedInputLanguage)) {
+            css = safeCode;
+        }
+        if (js.isBlank() && ("javascript".equals(normalizedInputLanguage) || "js".equals(normalizedInputLanguage))) {
+            js = safeCode;
+        }
+
+        if (html.isBlank()) {
+            html = """
+                    <!doctype html>
+                    <html>
+                    <head>
+                      <meta charset=\"UTF-8\" />
+                      <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+                      <title>Web Preview</title>
+                    </head>
+                    <body>
+                      <div id=\"app\">Live preview</div>
+                    </body>
+                    </html>
+                    """;
+        }
+
+        return injectCssAndJs(html, css, js);
+    }
+
+    private String injectCssAndJs(String html, String css, String js) {
+        String merged = html == null ? "" : html;
+        String styleTag = css == null || css.isBlank() ? "" : "<style>\n" + css + "\n</style>\n";
+        String scriptTag = js == null || js.isBlank() ? "" : "<script>\n" + js + "\n</script>\n";
+
+        if (!styleTag.isBlank()) {
+            if (merged.contains("</head>")) {
+                merged = merged.replace("</head>", styleTag + "</head>");
+            } else {
+                merged = styleTag + merged;
+            }
+        }
+
+        if (!scriptTag.isBlank()) {
+            if (merged.contains("</body>")) {
+                merged = merged.replace("</body>", scriptTag + "</body>");
+            } else {
+                merged = merged + scriptTag;
+            }
+        }
+
+        return merged;
+    }
+
+    private void switchToWebPreviewMode() {
+        panelMode = PanelMode.WEB_PREVIEW;
+        if (terminalTitleLabel != null) {
+            terminalTitleLabel.setText("Web Preview");
+        }
+        if (terminalClearButton != null) {
+            terminalClearButton.setText("Reload");
+        }
+        if (terminalOutputArea != null) {
+            terminalOutputArea.setVisible(false);
+            terminalOutputArea.setManaged(false);
+        }
+        if (webPreviewView != null) {
+            webPreviewView.setVisible(true);
+            webPreviewView.setManaged(true);
+        }
+    }
+
+    private void switchToTerminalMode() {
+        panelMode = PanelMode.TERMINAL;
+        if (terminalTitleLabel != null) {
+            terminalTitleLabel.setText("Terminal");
+        }
+        if (terminalClearButton != null) {
+            terminalClearButton.setText("Clear");
+        }
+        if (webPreviewView != null) {
+            webPreviewView.setVisible(false);
+            webPreviewView.setManaged(false);
+        }
+        if (terminalOutputArea != null) {
+            terminalOutputArea.setVisible(true);
+            terminalOutputArea.setManaged(true);
+        }
+    }
+
     private void handleTerminalKeyPressed(KeyEvent event) {
         if (terminalOutputArea == null) {
             return;
@@ -1454,6 +1618,7 @@ public class ChatController {
     }
 
     private void executeTerminalCommandFromConsole() {
+        switchToTerminalMode();
         if (terminalOutputArea == null) {
             return;
         }
@@ -1992,6 +2157,11 @@ public class ChatController {
     }
 
     private void clearTerminal() {
+        if (panelMode == PanelMode.WEB_PREVIEW && webPreviewView != null) {
+            webPreviewView.getEngine().reload();
+            setTerminalStatus("Live preview reloaded");
+            return;
+        }
         if (terminalOutputArea != null) {
             terminalOutputArea.clear();
         }
@@ -2018,6 +2188,7 @@ public class ChatController {
     }
 
     private void appendTerminalRaw(String text) {
+        switchToTerminalMode();
         if (terminalOutputArea == null) {
             return;
         }
@@ -2033,6 +2204,7 @@ public class ChatController {
     }
 
     private void appendTerminalLine(String line) {
+        switchToTerminalMode();
         if (terminalOutputArea == null) {
             return;
         }

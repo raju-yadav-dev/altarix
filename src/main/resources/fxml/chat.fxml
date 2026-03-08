@@ -69,7 +69,7 @@
                 <!-- ================= RIGHT TERMINAL PANEL ================= -->
                 <VBox fx:id="terminalPane" styleClass="terminal-pane">
                     <HBox styleClass="terminal-header" alignment="CENTER_LEFT" spacing="8">
-                        <Label text="Terminal" styleClass="terminal-title" />
+                        <Label fx:id="terminalTitleLabel" text="Terminal" styleClass="terminal-title" />
                         <HBox styleClass="terminal-dock-group" alignment="CENTER_LEFT" spacing="4">
                             <Button fx:id="terminalDockLeftButton" text="" styleClass="terminal-dock-button" focusTraversable="false" />
                             <Button fx:id="terminalDockRightButton" text="" styleClass="terminal-dock-button" focusTraversable="false" />
@@ -81,13 +81,15 @@
                         <Button fx:id="terminalClearButton" text="Clear" styleClass="terminal-clear-button" focusTraversable="false" />
                         <Button fx:id="terminalCloseButton" text="x" styleClass="terminal-close-button" focusTraversable="false" />
                     </HBox>
-                    <TextArea fx:id="terminalOutputArea"
-                              editable="true"
-                              wrapText="true"
-                              prefRowCount="12"
-                              focusTraversable="true"
-                              styleClass="terminal-output"
-                              VBox.vgrow="ALWAYS" />
+                    <StackPane fx:id="terminalContentHost" VBox.vgrow="ALWAYS">
+                        <TextArea fx:id="terminalOutputArea"
+                                  editable="true"
+                                  wrapText="true"
+                                  prefRowCount="12"
+                                  focusTraversable="true"
+                                  styleClass="terminal-output"
+                                  VBox.vgrow="ALWAYS" />
+                    </StackPane>
                 </VBox>
             </items>
         </SplitPane>

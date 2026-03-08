@@ -21,6 +21,8 @@ dependencies {
     implementation 'org.openjfx:javafx-graphics:20.0.1:win'
     implementation 'org.openjfx:javafx-controls:20.0.1:win'
     implementation 'org.openjfx:javafx-fxml:20.0.1:win'
+    implementation 'org.openjfx:javafx-web:20.0.1:win'
+    implementation 'org.openjfx:javafx-media:20.0.1:win'
 
     // Export dependencies
     implementation 'org.apache.pdfbox:pdfbox:2.0.29'
@@ -38,7 +40,7 @@ dependencies {
 run {
     jvmArgs = [
         '--module-path', configurations.runtimeClasspath.asPath,
-        '--add-modules', 'javafx.base,javafx.graphics,javafx.controls,javafx.fxml'
+        '--add-modules', 'javafx.base,javafx.graphics,javafx.controls,javafx.fxml,javafx.web,javafx.media'
     ]
 }
 

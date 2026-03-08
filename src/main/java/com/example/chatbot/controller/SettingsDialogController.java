@@ -40,6 +40,7 @@ public class SettingsDialogController {
     private final SettingsManager settings = SettingsManager.getInstance();
     private final Map<String, VBox> pages = new LinkedHashMap<>();
     private Runnable onSave;
+    private Consumer<BlurPreviewState> blurPreviewListener;
     private HostServices hostServices;
     private DialogMode dialogMode = DialogMode.PREFERENCES;
 
@@ -80,6 +81,10 @@ public class SettingsDialogController {
         this.hostServices = hostServices;
     }
 
+    public void setBlurPreviewListener(Consumer<BlurPreviewState> blurPreviewListener) {
+        this.blurPreviewListener = blurPreviewListener;
+    }
+
     public void setDialogMode(DialogMode dialogMode) {
         this.dialogMode = dialogMode == null ? DialogMode.PREFERENCES : dialogMode;
         if (categoryList != null) {
@@ -97,7 +102,7 @@ public class SettingsDialogController {
 
         pages.put("Code Execution", buildExecutionPage());
         pages.put("Terminal", buildTerminalPage());
-        pages.put("Language Runtime", buildRuntimePage());
+        pages.put("Supporting language", buildRuntimePage());
         pages.put("AI Model", buildAIPage());
     }
 
@@ -106,7 +111,7 @@ public class SettingsDialogController {
             return FXCollections.observableArrayList(
                     SidebarEntry.page("Code Execution"),
                     SidebarEntry.page("Terminal"),
-                    SidebarEntry.page("Language Runtime"),
+                    SidebarEntry.page("Supporting language"),
                     SidebarEntry.page("AI Model")
             );
         }
@@ -179,6 +184,10 @@ public class SettingsDialogController {
         blurLevelValue.getStyleClass().add("settings-value");
         blurLevelValue.setMinWidth(34);
         blurLevelSlider.valueProperty().addListener((obs, o, n) -> blurLevelValue.setText(String.format("%.1f", n.doubleValue())));
+        blurEnabled.selectedProperty().addListener((obs, oldVal, enabled) ->
+            notifyBlurPreview(enabled, blurLevelSlider.getValue()));
+        blurLevelSlider.valueProperty().addListener((obs, oldVal, newVal) ->
+            notifyBlurPreview(blurEnabled.isSelected(), newVal.doubleValue()));
         blurLevelRow.getChildren().addAll(blurLevelLabel, blurLevelSlider, blurLevelValue);
         blurLevelRow.setUserData(new SettingBinding("appearance.modalBlurRadius", blurLevelSlider::getValue));
         page.getChildren().add(blurLevelRow);
@@ -187,6 +196,9 @@ public class SettingsDialogController {
         blurHint.setWrapText(true);
         blurHint.getStyleClass().add("settings-hint");
         page.getChildren().add(blurHint);
+
+        // Initialize preview with current values when Appearance page is created.
+        notifyBlurPreview(blurEnabled.isSelected(), blurLevelSlider.getValue());
         return page;
     }
 
@@ -224,9 +236,9 @@ public class SettingsDialogController {
         return page;
     }
 
-    // ================= LANGUAGE RUNTIME =================
+    // ================= SUPPORTING LANGUAGE =================
     private VBox buildRuntimePage() {
-        VBox page = createPage("Language Runtime");
+        VBox page = createPage("Supporting language");
         Label hint = new Label("Set custom paths for language runtimes not found in your system PATH.");
         hint.setWrapText(true);
         hint.getStyleClass().add("settings-hint");
@@ -236,6 +248,16 @@ public class SettingsDialogController {
         page.getChildren().add(createPathRow("Node.js path", "runtime.nodePath"));
         page.getChildren().add(createPathRow("Java path", "runtime.javaPath"));
         page.getChildren().add(createPathRow("GCC / G++ path", "runtime.gccPath"));
+        page.getChildren().add(createPathRow("TypeScript (ts-node) path", "runtime.tsNodePath"));
+        page.getChildren().add(createPathRow("Ruby path", "runtime.rubyPath"));
+        page.getChildren().add(createPathRow("PHP path", "runtime.phpPath"));
+        page.getChildren().add(createPathRow("Lua path", "runtime.luaPath"));
+        page.getChildren().add(createPathRow("Perl path", "runtime.perlPath"));
+        page.getChildren().add(createPathRow("Rscript path", "runtime.rPath"));
+        page.getChildren().add(createPathRow("Dart path", "runtime.dartPath"));
+        page.getChildren().add(createPathRow("Groovy path", "runtime.groovyPath"));
+        page.getChildren().add(createPathRow("Swift path", "runtime.swiftPath"));
+        page.getChildren().add(createPathRow("Julia path", "runtime.juliaPath"));
         return page;
     }
 
@@ -484,8 +506,24 @@ public class SettingsDialogController {
     }
 
     private void closeDialog() {
+        restoreSavedBlurPreview();
         Stage stage = (Stage) cancelButton.getScene().getWindow();
         stage.close();
+    }
+
+    private void notifyBlurPreview(boolean blurEnabled, double blurRadius) {
+        if (blurPreviewListener == null) {
+            return;
+        }
+        double clamped = Math.max(0.0, Math.min(12.0, blurRadius));
+        blurPreviewListener.accept(new BlurPreviewState(blurEnabled, clamped));
+    }
+
+    private void restoreSavedBlurPreview() {
+        notifyBlurPreview(
+                settings.getBoolean("appearance.modalBlurEnabled", true),
+                settings.getDouble("appearance.modalBlurRadius", 5.5)
+        );
     }
 
     private void persistAiConfigToResourceProperties() {
@@ -547,6 +585,8 @@ public class SettingsDialogController {
 
     // ================= BINDING RECORD =================
     private record SettingBinding(String key, java.util.function.Supplier<Object> valueGetter) {}
+
+    public record BlurPreviewState(boolean enabled, double radius) {}
 
     private record SidebarEntry(String label, String pageName, boolean groupHeader) {
         private static SidebarEntry page(String name) {

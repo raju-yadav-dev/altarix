@@ -160,15 +160,15 @@ public class ChatView extends BorderPane {
     public MenuButton getThemeMenuButton() {
         return themeMenuButton;
     }
-    
+
     public MenuItem getPurpleDarkItem() {
         return purpleDarkItem;
     }
-    
+
     public MenuItem getGreenDarkItem() {
         return greenDarkItem;
     }
-    
+
     public MenuItem getLightModeItem() {
         return lightModeItem;
     }
