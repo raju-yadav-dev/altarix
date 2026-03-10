@@ -126,6 +126,8 @@ public class ChatController {
     private static final Pattern ORDERED_LIST_PATTERN = Pattern.compile("^(\\d+)\\.\\s+(.*)$");
     private static final Pattern UNORDERED_LIST_PATTERN = Pattern.compile("^[-*]\\s+(.*)$");
     private static final Pattern INLINE_MARKDOWN_PATTERN = Pattern.compile("(\\*\\*([^*]+)\\*\\*)|(`([^`]+)`)|(\\*([^*]+)\\*)");
+    private static final Pattern MINOR_EDIT_REQUEST_PATTERN = Pattern.compile("\\b(edit|change|modify|update|fix|correct|adjust|reword|tweak|replace|shorten|lengthen|refine|improve|remove|add)\\b");
+    private static final Pattern MAJOR_REWRITE_REQUEST_PATTERN = Pattern.compile("\\b(rewrite|from scratch|completely new|new version|start over|regenerate)\\b");
     private static final double MESSAGE_WIDTH_RATIO = 0.70;
     private static final double MESSAGE_MAX_WIDTH_CAP = 920;
     private static final double MESSAGE_MIN_WIDTH = 260;
@@ -319,7 +321,8 @@ public class ChatController {
 
     // ================= SEND FLOW =================
     private void sendMessage() {
-        if (conversation == null) {
+        Conversation requestConversation = conversation;
+        if (requestConversation == null) {
             return;
         }
 
@@ -331,21 +334,23 @@ public class ChatController {
             return;
         }
 
-        int previousSize = conversation.getMessages().size();
-        String previousTitle = conversation.getTitle();
+        int previousSize = requestConversation.getMessages().size();
+        String previousTitle = requestConversation.getTitle();
+        Message editTarget = isMinorEditRequest(text) ? findLastAssistantMessage(requestConversation) : null;
         inputArea.clear();
         setComposerBusy(true);
         stopResponseAnimations();
 
-        inFlightRequest = chatService.sendMessageAsync(conversation, text);
+        CompletableFuture<Message> requestFuture = chatService.sendMessageAsync(requestConversation, text);
+        inFlightRequest = requestFuture;
 
-        for (int i = previousSize; i < conversation.getMessages().size(); i++) {
-            HBox bubble = createBubble(conversation.getMessages().get(i));
+        for (int i = previousSize; i < requestConversation.getMessages().size(); i++) {
+            HBox bubble = createBubble(requestConversation.getMessages().get(i));
             messageBox.getChildren().add(bubble);
             playFadeIn(bubble);
         }
 
-        if (onConversationUpdated != null && !Objects.equals(previousTitle, conversation.getTitle())) {
+        if (onConversationUpdated != null && !Objects.equals(previousTitle, requestConversation.getTitle())) {
             onConversationUpdated.run();
         }
 
@@ -355,13 +360,7 @@ public class ChatController {
         startGeneratingIndicator();
         scrollToBottom();
 
-        inFlightRequest.whenComplete((botMessage, error) -> Platform.runLater(() -> {
-            if (conversation == null) {
-                stopResponseAnimations();
-                setComposerBusy(false);
-                return;
-            }
-
+        requestFuture.whenComplete((botMessage, error) -> Platform.runLater(() -> {
             Message responseMessage = botMessage;
             if (error != null) {
                 String errorMessage = error.getMessage() == null ? error.toString() : error.getMessage();
@@ -377,12 +376,63 @@ public class ChatController {
                 );
             }
 
-            chatService.appendAssistantMessage(conversation, responseMessage);
+            if (editTarget != null && error == null) {
+                applyMinorEditResponse(editTarget, responseMessage);
+                inFlightRequest = null;
+                setComposerBusy(false);
+                return;
+            }
+
+            chatService.appendAssistantMessage(requestConversation, responseMessage);
             animateAssistantResponse(responseMessage, () -> {
                 inFlightRequest = null;
                 setComposerBusy(false);
             });
         }));
+    }
+
+    private boolean isMinorEditRequest(String userText) {
+        if (userText == null) {
+            return false;
+        }
+        String normalized = userText.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty() || normalized.length() > 280) {
+            return false;
+        }
+        if (!MINOR_EDIT_REQUEST_PATTERN.matcher(normalized).find()) {
+            return false;
+        }
+        return !MAJOR_REWRITE_REQUEST_PATTERN.matcher(normalized).find();
+    }
+
+    private Message findLastAssistantMessage(Conversation targetConversation) {
+        if (targetConversation == null) {
+            return null;
+        }
+        List<Message> messages = targetConversation.getMessages();
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message candidate = messages.get(i);
+            if (candidate.getSender() == Message.Sender.BOT) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private void applyMinorEditResponse(Message editTarget, Message responseMessage) {
+        if (editTarget == null || responseMessage == null) {
+            return;
+        }
+
+        stopGeneratingIndicator();
+        stopResponseTyping();
+        editTarget.editContent(responseMessage.getContent());
+
+        if (pendingBotBubbleRow != null && messageBox != null) {
+            messageBox.getChildren().remove(pendingBotBubbleRow);
+        }
+        clearPendingBotBubble();
+        refreshMessages();
     }
 
     private HBox createGeneratingBubble() {
@@ -775,7 +825,10 @@ public class ChatController {
         Node content = msg.getSender() == Message.Sender.USER
             ? buildCompactUserContent(msg.getContent())
             : buildMessageContent(msg.getContent());
-        VBox bubble = new VBox(content);
+
+        VBox bubble = new VBox(6);
+        bubble.getChildren().add(content);
+        appendEditedIndicator(msg, bubble);
         bubble.getStyleClass().add("message-bubble");
         applyResponsiveMaxWidth(bubble);
 
@@ -820,6 +873,47 @@ public class ChatController {
         }
 
         return row;
+    }
+
+    private void appendEditedIndicator(Message msg, VBox bubbleContent) {
+        if (msg == null || bubbleContent == null) {
+            return;
+        }
+        if (msg.getSender() != Message.Sender.BOT || !msg.isEdited()) {
+            return;
+        }
+
+        String previousContent = msg.getPreviousContent();
+        if (previousContent == null || previousContent.isBlank()) {
+            return;
+        }
+
+        Button editedButton = new Button("edited");
+        editedButton.getStyleClass().add("message-edited-link");
+        editedButton.setFocusTraversable(false);
+
+        HBox metaRow = new HBox(editedButton);
+        metaRow.getStyleClass().add("message-meta-row");
+
+        Label previousLabel = new Label("Previous version");
+        previousLabel.getStyleClass().add("message-previous-title");
+
+        Node previousContentNode = buildMessageContent(previousContent);
+        VBox previousContainer = new VBox(8, previousLabel, previousContentNode);
+        previousContainer.getStyleClass().add("message-previous-version");
+        previousContainer.setVisible(false);
+        previousContainer.setManaged(false);
+
+        editedButton.setOnAction(event -> {
+            boolean showPrevious = !previousContainer.isVisible();
+            previousContainer.setVisible(showPrevious);
+            previousContainer.setManaged(showPrevious);
+            editedButton.setText(showPrevious ? "hide edit" : "edited");
+            scrollToBottomNow();
+        });
+
+        bubbleContent.getChildren().add(metaRow);
+        bubbleContent.getChildren().add(previousContainer);
     }
 
     // ================= ASK ABOUT SELECTION =================
@@ -1096,6 +1190,8 @@ public class ChatController {
         } else {
             bubble = new VBox(content);
         }
+
+        appendEditedIndicator(msg, bubble);
         bubble.getStyleClass().add("message-bubble");
 
         Region spacer = new Region();

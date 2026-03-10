@@ -1361,6 +1361,75 @@
     -fx-alignment: bottom-right;
 }
 
+.message-meta-row {
+    -fx-alignment: center-left;
+    -fx-padding: 2 0 0 0;
+}
+
+.message-edited-link,
+.message-edited-link:hover,
+.message-edited-link:pressed,
+.message-edited-link:focused,
+.message-edited-link:armed {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+    -fx-padding: 0;
+    -fx-font-size: 11px;
+    -fx-font-weight: 600;
+    -fx-cursor: hand;
+    -fx-underline: true;
+    -fx-effect: null;
+}
+
+.window-root.theme-dark .message-edited-link {
+    -fx-text-fill: rgba(199, 208, 249, 0.82);
+}
+
+.window-root.theme-dark .message-edited-link:hover {
+    -fx-text-fill: #eef2ff;
+}
+
+.window-root.theme-light .message-edited-link {
+    -fx-text-fill: rgba(73, 58, 92, 0.72);
+}
+
+.window-root.theme-light .message-edited-link:hover {
+    -fx-text-fill: #2a1f35;
+}
+
+.message-previous-version {
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-border-width: 1;
+    -fx-padding: 10 12 10 12;
+    -fx-spacing: 8;
+}
+
+.message-previous-title {
+    -fx-font-size: 11px;
+    -fx-font-weight: 700;
+}
+
+.window-root.theme-dark .message-previous-version {
+    -fx-background-color: rgba(17, 24, 39, 0.46);
+    -fx-border-color: rgba(199, 208, 249, 0.22);
+}
+
+.window-root.theme-dark .message-previous-title {
+    -fx-text-fill: rgba(199, 208, 249, 0.84);
+}
+
+.window-root.theme-light .message-previous-version {
+    -fx-background-color: rgba(226, 232, 240, 0.56);
+    -fx-border-color: rgba(176, 164, 196, 0.28);
+}
+
+.window-root.theme-light .message-previous-title {
+    -fx-text-fill: rgba(58, 44, 75, 0.76);
+}
+
 /* ========== BUBBLE COPY ICON (outside bubble) ========== */
 .bubble-copy-icon {
     -fx-background-color: transparent;
