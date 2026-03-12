@@ -1150,6 +1150,11 @@
     -fx-spacing: 8;
 }
 
+.message-markdown-section {
+    -fx-fill-width: true;
+    -fx-spacing: 6;
+}
+
 .message-line-container {
     -fx-padding: 0;
 }
@@ -1201,6 +1206,54 @@
 
 .message-line-list {
     -fx-font-weight: 600;
+}
+
+.message-image-block {
+    -fx-spacing: 6;
+    -fx-padding: 2 0 2 0;
+}
+
+.message-image-frame {
+    -fx-alignment: center;
+    -fx-padding: 8;
+    -fx-background-color: -app-surface-elevated;
+    -fx-background-radius: 14;
+    -fx-border-color: -app-border;
+    -fx-border-width: 1;
+    -fx-border-radius: 14;
+}
+
+.message-image-view {
+    -fx-background-radius: 10;
+}
+
+.message-image-placeholder {
+    -fx-text-fill: -app-text-secondary;
+    -fx-font-size: 12px;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+    -fx-padding: 24 16;
+}
+
+.message-image-caption {
+    -fx-text-fill: -app-text-secondary;
+    -fx-font-size: 12px;
+    -fx-wrap-text: true;
+}
+
+.message-image-download {
+    -fx-font-size: 11px;
+    -fx-padding: 1 4 1 4;
+}
+
+.user-bubble .message-image-frame {
+    -fx-background-color: rgba(255, 255, 255, 0.22);
+    -fx-border-color: rgba(255, 255, 255, 0.34);
+}
+
+.user-bubble .message-image-caption,
+.user-bubble .message-image-placeholder {
+    -fx-text-fill: #1f2557;
 }
 
 /* ---- Selectable text area (replaces TextFlow for text blocks) ---- */
@@ -1450,6 +1503,7 @@
 }
 
 .bubble-copy-row {
+    -fx-spacing: 4;
     -fx-padding: 0 4 0 4;
 }
 
@@ -1672,6 +1726,105 @@
 
 .composer-host .chat-container {
     -fx-alignment: center;
+}
+
+.attachment-preview-bar {
+    -fx-background-color: rgba(15, 23, 42, 0.52);
+    -fx-border-color: rgba(148, 163, 184, 0.36);
+    -fx-border-width: 1;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 6 8 6 8;
+    -fx-max-width: 300;
+    -fx-pref-width: 300;
+}
+
+.attachment-preview-thumb-wrap {
+    -fx-min-width: 30;
+    -fx-pref-width: 30;
+    -fx-min-height: 30;
+    -fx-pref-height: 30;
+    -fx-background-color: rgba(148, 163, 184, 0.2);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(148, 163, 184, 0.28);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-alignment: center;
+}
+
+.attachment-preview-thumb {
+    -fx-fit-width: 30;
+    -fx-fit-height: 30;
+}
+
+.attachment-preview-label {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 11px;
+    -fx-font-weight: 600;
+    -fx-max-width: 220;
+}
+
+.attachment-remove-button {
+    -fx-min-width: 20;
+    -fx-pref-width: 20;
+    -fx-min-height: 20;
+    -fx-pref-height: 20;
+    -fx-padding: 0;
+    -fx-font-size: 10px;
+    -fx-font-weight: 700;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+}
+
+.attach-image-button {
+    -fx-min-width: 42;
+    -fx-pref-width: 42;
+    -fx-max-width: 42;
+    -fx-min-height: 36;
+    -fx-pref-height: 36;
+    -fx-max-height: 36;
+    -fx-padding: 0;
+    -fx-alignment: center;
+    -fx-content-display: text-only;
+    -fx-font-family: "Segoe UI Symbol", "Segoe UI Emoji";
+    -fx-font-size: 13px;
+    -fx-font-weight: 700;
+}
+
+#attachImageButton {
+    -fx-min-width: 42;
+    -fx-pref-width: 42;
+    -fx-max-width: 42;
+    -fx-min-height: 36;
+    -fx-pref-height: 36;
+    -fx-max-height: 36;
+}
+
+.window-root.theme-light .attachment-preview-bar {
+    -fx-background-color: rgba(244, 239, 247, 0.95);
+    -fx-border-color: rgba(130, 112, 162, 0.26);
+}
+
+.window-root.theme-light .attachment-preview-thumb-wrap {
+    -fx-background-color: rgba(130, 112, 162, 0.12);
+    -fx-border-color: rgba(130, 112, 162, 0.24);
+}
+
+.window-root.theme-light .attachment-remove-button {
+    -fx-text-fill: #4c3b67;
+    -fx-background-color: rgba(130, 112, 162, 0.14);
+    -fx-border-color: rgba(130, 112, 162, 0.26);
+}
+
+.window-root.theme-dark .attachment-remove-button {
+    -fx-text-fill: #dbe3ff;
+    -fx-background-color: rgba(148, 163, 184, 0.16);
+    -fx-border-color: rgba(148, 163, 184, 0.3);
+}
+
+.window-root.theme-dark .attachment-preview-thumb-wrap {
+    -fx-background-color: rgba(148, 163, 184, 0.16);
+    -fx-border-color: rgba(148, 163, 184, 0.28);
 }
 
 .export-toast-banner {
@@ -2018,6 +2171,92 @@
     -fx-background-color: transparent;
 }
 
+.composer-mode-combo {
+    -fx-min-width: 106;
+    -fx-pref-width: 124;
+    -fx-max-width: 146;
+    -fx-min-height: 34;
+    -fx-pref-height: 34;
+    -fx-font-size: 12px;
+    -fx-background-color: -app-surface-elevated;
+    -fx-background-insets: 0;
+    -fx-background-radius: 10;
+    -fx-border-color: -app-border;
+    -fx-border-width: 1;
+    -fx-border-radius: 10;
+    -fx-padding: 0 4 0 0;
+    -fx-cursor: hand;
+    -fx-effect: none;
+}
+
+.composer-mode-combo:hover {
+    -fx-background-color: derive(-app-surface-elevated, 4%);
+    -fx-border-color: -app-focus-ring;
+}
+
+.composer-mode-combo:focused,
+.composer-mode-combo:showing {
+    -fx-border-color: -app-focus-ring;
+}
+
+.composer-mode-combo:showing {
+    -fx-background-radius: 10 10 6 6;
+    -fx-border-radius: 10 10 6 6;
+}
+
+.composer-mode-combo:disabled {
+    -fx-opacity: 0.58;
+}
+
+.composer-mode-combo > .list-cell {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0 2 0 10;
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 12px;
+}
+
+.composer-mode-combo > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 0 10 10 0;
+    -fx-padding: 0 10 0 4;
+}
+
+.composer-mode-combo > .arrow-button > .arrow {
+    -fx-background-color: -app-text-muted;
+    -fx-shape: "M 0 0 L 4 4 L 8 0 Z";
+    -fx-padding: 4 4 0 4;
+    -fx-scale-shape: false;
+}
+
+.composer-mode-combo:hover > .arrow-button > .arrow,
+.composer-mode-combo:showing > .arrow-button > .arrow {
+    -fx-background-color: -app-text-primary;
+}
+
+.model-mode-cell {
+    -fx-alignment: center-left;
+    -fx-spacing: 6;
+}
+
+.model-mode-icon {
+    -fx-text-fill: -app-text-muted;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-min-width: 11;
+}
+
+.model-mode-label {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 12px;
+}
+
+.composer-mode-combo:hover .model-mode-icon,
+.composer-mode-combo:showing .model-mode-icon {
+    -fx-text-fill: -app-accent;
+}
+
 .text-area {
     -fx-font-size: 14px;
     -fx-padding: 0;
@@ -2297,26 +2536,25 @@
 /* ── ComboBox floating popup (popover dropdown) ── */
 .combo-box-popup {
     -fx-background-color: transparent;
-    -fx-padding: 0;
+    -fx-padding: 4 0 0 0;
 }
 
 .combo-box-popup > .list-view {
-    -fx-background-color: #2b2f55;
+    -fx-background-color: -app-surface-elevated;
     -fx-control-inner-background: transparent;
-    -fx-border-color: transparent;
-    -fx-border-width: 0;
-    -fx-border-radius: 0 0 12 12;
-    -fx-background-radius: 0 0 12 12;
+    -fx-border-color: -app-border;
+    -fx-border-width: 1;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
     -fx-background-insets: 0;
-    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.4), 18, 0, 0, 6);
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.24), 18, 0.18, 0, 6);
     -fx-max-height: 260;
-    -fx-opacity: 1;
-    -fx-padding: 0;
+    -fx-padding: 4;
 }
 
 .combo-box-popup > .list-view:focused {
     -fx-background-insets: 0;
-    -fx-border-color: transparent;
+    -fx-border-color: -app-border;
 }
 
 .combo-box-popup > .list-view > .virtual-flow,
@@ -2324,9 +2562,9 @@
 .combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet,
 .combo-box-popup > .list-view .viewport,
 .combo-box-popup > .list-view .corner {
-    -fx-background-color: #2b2f55;
+    -fx-background-color: -app-surface-elevated;
     -fx-background-insets: 0;
-    -fx-background-radius: 0 0 12 12;
+    -fx-background-radius: 12;
     -fx-border-color: transparent;
 }
 
@@ -2334,42 +2572,31 @@
     -fx-padding: 0;
 }
 
-.theme-light .combo-box-popup > .list-view > .virtual-flow,
-.theme-light .combo-box-popup > .list-view > .virtual-flow > .clipped-container,
-.theme-light .combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet,
-.theme-light .combo-box-popup > .list-view .viewport,
-.theme-light .combo-box-popup > .list-view .corner {
-    -fx-background-color: #ffffff;
-}
-
-.theme-light .combo-box-popup > .list-view {
-    -fx-background-color: #ffffff;
-}
-
-.theme-dark .combo-box-popup > .list-view {
-    -fx-background-color: #2b2f55;
-}
-
 .combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell {
     -fx-background-color: transparent;
     -fx-background-insets: 0;
-    -fx-background-radius: 0;
+    -fx-background-radius: 8;
     -fx-text-fill: -app-text-primary;
     -fx-font-size: 13px;
-    -fx-padding: 6 12;
+    -fx-padding: 7 10;
 }
 
 .combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell:filled:hover {
-    -fx-background-color: -app-accent-soft;
-    -fx-background-radius: 0;
+    -fx-background-color: -app-muted-hover;
+    -fx-background-radius: 8;
     -fx-background-insets: 0;
 }
 
 .combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell:filled:selected {
-    -fx-background-color: -app-accent;
-    -fx-text-fill: white;
-    -fx-background-radius: 0;
+    -fx-background-color: -app-accent-soft;
+    -fx-text-fill: -app-text-primary;
+    -fx-background-radius: 8;
     -fx-background-insets: 0;
+}
+
+.combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell:filled:hover .model-mode-icon,
+.combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell:filled:selected .model-mode-icon {
+    -fx-text-fill: -app-accent;
 }
 
 .combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell:empty {

@@ -20,7 +20,9 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.function.Consumer;
@@ -265,11 +267,11 @@ public class SettingsDialogController {
     private VBox buildAIPage() {
         VBox page = createPage("AI Model");
 
-        page.getChildren().add(createSecretFieldRow(
-            "API key",
+        page.getChildren().add(createMultiSecretFieldRow(
+            "API keys",
+            "ai.apiKeys",
             "ai.apiKey",
-            settings.getString("ai.apiKey", ""),
-            "sk-..."
+            "Add one or more API keys. Use + to add more keys."
         ));
         page.getChildren().add(createTextFieldRow(
             "Base URL",
@@ -282,6 +284,12 @@ public class SettingsDialogController {
             "ai.modelName",
             settings.getString("ai.modelName", "gpt-4.1-mini"),
             "gpt-4.1-mini"
+        ));
+        page.getChildren().add(createComboRow(
+                "Input mode default",
+                "chat.inputModeDefault",
+                new String[]{"Best", "Groq", "Google Vision", "Leonardo", "Freepik"},
+                settings.getString("chat.inputModeDefault", "Best")
         ));
 
         // Temperature slider 0.0 – 2.0
@@ -355,6 +363,90 @@ public class SettingsDialogController {
         row.getChildren().addAll(lbl, field);
         row.setUserData(new SettingBinding(key, field::getText));
         return row;
+    }
+
+    private VBox createMultiSecretFieldRow(String label, String csvKey, String legacyKey, String hintText) {
+        VBox wrapper = new VBox(8);
+
+        Label labelNode = new Label(label);
+        labelNode.getStyleClass().add("settings-label");
+
+        Label hintNode = new Label(hintText);
+        hintNode.setWrapText(true);
+        hintNode.getStyleClass().add("settings-hint");
+
+        VBox keysContainer = new VBox(6);
+        keysContainer.setFillWidth(true);
+
+        List<String> initialKeys = parseCommaSeparated(settings.getString(csvKey, ""));
+        if (initialKeys.isEmpty()) {
+            String legacy = settings.getString(legacyKey, "").trim();
+            if (!legacy.isEmpty()) {
+                initialKeys.add(legacy);
+            }
+        }
+        if (initialKeys.isEmpty()) {
+            initialKeys.add("");
+        }
+
+        for (String keyValue : initialKeys) {
+            keysContainer.getChildren().add(createApiKeyEditorRow(keyValue, keysContainer));
+        }
+
+        Button addButton = new Button("+");
+        addButton.setFocusTraversable(false);
+        addButton.getStyleClass().add("settings-browse-button");
+        addButton.setOnAction(event -> keysContainer.getChildren().add(createApiKeyEditorRow("", keysContainer)));
+
+        HBox addRow = new HBox(addButton);
+        addRow.setAlignment(Pos.CENTER_LEFT);
+
+        wrapper.getChildren().addAll(labelNode, hintNode, keysContainer, addRow);
+        wrapper.setUserData(new SettingBinding(csvKey, () -> collectApiKeys(keysContainer)));
+        return wrapper;
+    }
+
+    private HBox createApiKeyEditorRow(String initialValue, VBox owner) {
+        HBox row = new HBox(8);
+        row.setAlignment(Pos.CENTER_LEFT);
+
+        PasswordField field = new PasswordField();
+        field.setText(initialValue == null ? "" : initialValue.trim());
+        field.setPromptText("sk-...");
+        field.getStyleClass().add("settings-text-field");
+        HBox.setHgrow(field, Priority.ALWAYS);
+
+        Button remove = new Button("-");
+        remove.setFocusTraversable(false);
+        remove.getStyleClass().add("settings-browse-button");
+        remove.setOnAction(event -> {
+            owner.getChildren().remove(row);
+            if (owner.getChildren().isEmpty()) {
+                owner.getChildren().add(createApiKeyEditorRow("", owner));
+            }
+        });
+
+        row.getChildren().addAll(field, remove);
+        return row;
+    }
+
+    private String collectApiKeys(VBox keysContainer) {
+        List<String> values = new ArrayList<>();
+        for (Node node : keysContainer.getChildren()) {
+            if (!(node instanceof HBox row)) {
+                continue;
+            }
+            for (Node child : row.getChildren()) {
+                if (child instanceof TextField field) {
+                    String value = field.getText() == null ? "" : field.getText().trim();
+                    if (!value.isEmpty()) {
+                        values.add(value);
+                    }
+                    break;
+                }
+            }
+        }
+        return String.join(",", values);
     }
 
     // ================= PRIVACY =================
@@ -485,6 +577,8 @@ public class SettingsDialogController {
         for (VBox page : pages.values()) {
             collectBindings(page);
         }
+        List<String> configuredKeys = parseCommaSeparated(settings.getString("ai.apiKeys", ""));
+        settings.set("ai.apiKey", configuredKeys.isEmpty() ? "" : configuredKeys.get(0));
         persistAiConfigToResourceProperties();
         settings.save();
         if (onSave != null) {
@@ -527,7 +621,7 @@ public class SettingsDialogController {
     }
 
     private void persistAiConfigToResourceProperties() {
-        Path resourcePath = resolveResourceAppPropertiesPath();
+        Path resourcePath = resolveAppPropertiesPath();
         if (resourcePath == null) {
             return;
         }
@@ -544,6 +638,20 @@ public class SettingsDialogController {
         properties.setProperty("past_api", settings.getString("ai.apiKey", "").trim());
         properties.setProperty("openai_base_url", settings.getString("ai.baseUrl", "https://api.openai.com").trim());
         properties.setProperty("openai_model", settings.getString("ai.modelName", "gpt-4.1-mini").trim());
+        List<String> apiKeys = parseCommaSeparated(settings.getString("ai.apiKeys", ""));
+        if (apiKeys.isEmpty()) {
+            String singleKey = settings.getString("ai.apiKey", "").trim();
+            if (!singleKey.isEmpty()) {
+                apiKeys.add(singleKey);
+            }
+        }
+        clearIndexedKeys(properties, "past_api_");
+        if (!apiKeys.isEmpty()) {
+            properties.setProperty("past_api", apiKeys.get(0));
+            for (int i = 0; i < apiKeys.size(); i++) {
+                properties.setProperty("past_api_" + (i + 1), apiKeys.get(i));
+            }
+        }
 
         try {
             Files.createDirectories(resourcePath.getParent());
@@ -555,7 +663,7 @@ public class SettingsDialogController {
         }
     }
 
-    private Path resolveResourceAppPropertiesPath() {
+    private Path resolveAppPropertiesPath() {
         try {
             Path userDir = Paths.get(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
             Path projectDir;
@@ -565,8 +673,7 @@ public class SettingsDialogController {
                 Path nested = userDir.resolve("ai-project");
                 projectDir = Files.isDirectory(nested) ? nested : userDir;
             }
-            return projectDir.resolve("src").resolve("main").resolve("resources").resolve(APP_PROPERTIES_FILE)
-                    .toAbsolutePath().normalize();
+            return projectDir.resolve(APP_PROPERTIES_FILE).toAbsolutePath().normalize();
         } catch (Exception ignored) {
             return null;
         }
@@ -581,6 +688,32 @@ public class SettingsDialogController {
         javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(2));
         pause.setOnFinished(e -> tip.hide());
         pause.play();
+    }
+
+    private List<String> parseCommaSeparated(String csv) {
+        List<String> values = new ArrayList<>();
+        if (csv == null || csv.isBlank()) {
+            return values;
+        }
+        for (String part : csv.split(",")) {
+            String value = part == null ? "" : part.trim();
+            if (!value.isEmpty()) {
+                values.add(value);
+            }
+        }
+        return values;
+    }
+
+    private void clearIndexedKeys(Properties properties, String prefix) {
+        List<String> keysToRemove = new ArrayList<>();
+        for (String name : properties.stringPropertyNames()) {
+            if (name != null && name.startsWith(prefix)) {
+                keysToRemove.add(name);
+            }
+        }
+        for (String key : keysToRemove) {
+            properties.remove(key);
+        }
     }
 
     // ================= BINDING RECORD =================

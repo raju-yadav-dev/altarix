@@ -53,6 +53,7 @@ public final class SettingsManager {
         putDefault("chat.streamingEnabled", true);
         putDefault("chat.autoScroll", true);
         putDefault("chat.historyEnabled", true);
+        putDefault("chat.inputModeDefault", "Best");
 
         // Code Execution
         putDefault("execution.timeoutSeconds", 10);
@@ -84,6 +85,7 @@ public final class SettingsManager {
 
         // AI Model
         putDefault("ai.apiKey", "");
+        putDefault("ai.apiKeys", "");
         putDefault("ai.baseUrl", "https://api.openai.com");
         putDefault("ai.modelName", "gpt-4.1-mini");
         putDefault("ai.temperature", 0.4);

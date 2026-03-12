@@ -20,8 +20,11 @@ import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.MenuButton;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
@@ -48,11 +51,22 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.Duration;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -88,7 +102,19 @@ public class ChatController {
     @FXML
     private HBox inputShell;
     @FXML
+    private HBox attachmentPreviewBar;
+    @FXML
+    private Label attachmentPreviewLabel;
+    @FXML
+    private ImageView attachmentPreviewThumb;
+    @FXML
+    private Button attachmentRemoveButton;
+    @FXML
+    private Button attachImageButton;
+    @FXML
     private MenuButton exportButton;
+    @FXML
+    private ComboBox<String> modelModeSelector;
     @FXML
     private SplitPane chatSplitPane;
     @FXML
@@ -126,13 +152,16 @@ public class ChatController {
     private static final Pattern ORDERED_LIST_PATTERN = Pattern.compile("^(\\d+)\\.\\s+(.*)$");
     private static final Pattern UNORDERED_LIST_PATTERN = Pattern.compile("^[-*]\\s+(.*)$");
     private static final Pattern INLINE_MARKDOWN_PATTERN = Pattern.compile("(\\*\\*([^*]+)\\*\\*)|(`([^`]+)`)|(\\*([^*]+)\\*)");
+    private static final Pattern MARKDOWN_IMAGE_PATTERN = Pattern.compile("!\\[([^\\]]*)\\]\\(([^)]+)\\)");
     private static final Pattern MINOR_EDIT_REQUEST_PATTERN = Pattern.compile("\\b(edit|change|modify|update|fix|correct|adjust|reword|tweak|replace|shorten|lengthen|refine|improve|remove|add)\\b");
     private static final Pattern MAJOR_REWRITE_REQUEST_PATTERN = Pattern.compile("\\b(rewrite|from scratch|completely new|new version|start over|regenerate)\\b");
+    private static final Pattern ATTACHED_IMAGE_MARKER_PATTERN = Pattern.compile("(?s)\\n*\\[Attached image: [^\\]]+\\]\\s*$");
     private static final double MESSAGE_WIDTH_RATIO = 0.70;
     private static final double MESSAGE_MAX_WIDTH_CAP = 920;
     private static final double MESSAGE_MIN_WIDTH = 260;
     private static final Pattern PUBLIC_CLASS_PATTERN = Pattern.compile("\\bpublic\\s+class\\s+([A-Za-z_$][\\w$]*)\\b");
     private static final Pattern CLASS_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_$][\\w$]*)\\b");
+    private static final long MAX_IMAGE_ATTACHMENT_BYTES = 8L * 1024 * 1024;
     private static final double TERMINAL_MIN_WIDTH = 280;
     private static final double TERMINAL_DEFAULT_WIDTH = 360;
     private static final double TERMINAL_MAX_WIDTH = 520;
@@ -141,6 +170,10 @@ public class ChatController {
     private static final double TERMINAL_DEFAULT_HEIGHT = 240;
     private static final double TERMINAL_MAX_HEIGHT = 420;
     private static final String TERMINAL_PROMPT_SUFFIX = "> ";
+    private static final String MODEL_MODE_ICON = "\u26A1";
+    private static final String DEFAULT_GENERATING_LABEL = "Cortex is generating";
+    private static final String IMAGE_GENERATING_LABEL = "Generating image";
+    private static final String DEFAULT_DOWNLOADED_IMAGE_NAME = "generated-image.png";
     private final BooleanProperty waitingForResponse = new SimpleBooleanProperty(false);
     private final LanguageConfigService langConfigService = new LanguageConfigService();
     private final CodeExecutionService codeExecutionService = new CodeExecutionService(langConfigService, this::appendTerminalRaw);
@@ -152,6 +185,7 @@ public class ChatController {
     private TerminalDockPosition terminalDockPosition = TerminalDockPosition.RIGHT;
     private Timeline generatingIndicatorTimeline;
     private Timeline responseTypingTimeline;
+    private final BooleanProperty hasPendingImage = new SimpleBooleanProperty(false);
     private HBox pendingBotBubbleRow;
     private Label pendingBotBubbleLabel;
     private VBox pendingBubbleContentBox;
@@ -161,6 +195,12 @@ public class ChatController {
     private boolean streamingActiveIsCode;
     private WebView webPreviewView;
     private PanelMode panelMode = PanelMode.TERMINAL;
+    private ChatService.ImageAttachment pendingImageAttachment;
+    private boolean pendingImageGenerationRequest;
+    private String pendingGenerationLabelBase = DEFAULT_GENERATING_LABEL;
+    private final HttpClient imageDownloadClient = HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(20))
+            .build();
 
     private enum PanelMode {
         TERMINAL,
@@ -188,22 +228,56 @@ public class ChatController {
         // ---- Disable Send For Empty Input ----
         sendButton.disableProperty().bind(
                 Bindings.createBooleanBinding(
-                        () -> waitingForResponse.get() || inputArea.getText() == null || inputArea.getText().trim().isEmpty(),
+                        () -> waitingForResponse.get()
+                                || ((inputArea.getText() == null || inputArea.getText().trim().isEmpty()) && !hasPendingImage.get()),
                         inputArea.textProperty(),
-                        waitingForResponse
+                        waitingForResponse,
+                        hasPendingImage
                 )
         );
 
         // ---- Send Actions ----
         sendButton.setOnAction(e -> sendMessage());
+        if (modelModeSelector != null) {
+            modelModeSelector.getItems().setAll("Best", "Groq", "Google Vision", "Leonardo", "Freepik");
+            modelModeSelector.setButtonCell(createModelModeCell());
+            modelModeSelector.setCellFactory(listView -> createModelModeCell());
+            modelModeSelector.setVisibleRowCount(5);
+            String defaultMode = settingsManager.getString("chat.inputModeDefault", "Best");
+            if (!modelModeSelector.getItems().contains(defaultMode)) {
+                defaultMode = "Best";
+            }
+            modelModeSelector.setValue(defaultMode);
+            modelModeSelector.setOnAction(event -> {
+                String selected = modelModeSelector.getValue();
+                settingsManager.set("chat.inputModeDefault", selected == null ? "Best" : selected);
+                settingsManager.save();
+            });
+            Tooltip.install(modelModeSelector, new Tooltip(
+                    "Best: auto select provider (image generation uses Freepik)\nGroq: text chat\nGoogle Vision: read attached images\nLeonardo / Freepik: generate images"
+            ));
+        }
+        if (attachImageButton != null) {
+            attachImageButton.setOnAction(event -> chooseImageAttachment());
+            Tooltip.install(attachImageButton, new Tooltip("Attach image for analysis"));
+        }
+        if (attachmentRemoveButton != null) {
+            attachmentRemoveButton.setOnAction(event -> clearPendingImageAttachment());
+        }
 
         // ---- Enter To Send, Shift+Enter For Newline ----
         inputArea.setWrapText(true);
-        Tooltip inputTooltip = new Tooltip("Enter to send\nShift+Enter for new line\nCtrl+C to copy selected text");
+        Tooltip inputTooltip = new Tooltip("Enter to send\nShift+Enter for new line\nAttach or paste an image to analyze it");
         inputTooltip.setStyle("-fx-font-size: 11px;");
         Tooltip.install(inputArea, inputTooltip);
         
         inputArea.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.V && event.isShortcutDown()) {
+                if (tryAttachImageFromClipboard()) {
+                    event.consume();
+                    return;
+                }
+            }
             if (event.getCode() == KeyCode.ENTER) {
                 if (event.isShiftDown()) {
                     int pos = inputArea.getCaretPosition();
@@ -260,6 +334,37 @@ public class ChatController {
         initializeWebPreview();
         hideTerminalPanel();
         setTerminalStatus("Terminal hidden");
+        updateAttachmentPreview();
+    }
+
+    private ListCell<String> createModelModeCell() {
+        return new ListCell<>() {
+            private final HBox content = new HBox(6);
+            private final Label iconLabel = new Label(MODEL_MODE_ICON);
+            private final Label textLabel = new Label();
+
+            {
+                content.getStyleClass().add("model-mode-cell");
+                iconLabel.getStyleClass().add("model-mode-icon");
+                textLabel.getStyleClass().add("model-mode-label");
+                textLabel.setMaxWidth(Double.MAX_VALUE);
+                textLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+                HBox.setHgrow(textLabel, Priority.ALWAYS);
+                content.getChildren().addAll(iconLabel, textLabel);
+                setContentDisplay(javafx.scene.control.ContentDisplay.GRAPHIC_ONLY);
+            }
+
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null || item.isBlank()) {
+                    setGraphic(null);
+                    return;
+                }
+                textLabel.setText(item);
+                setGraphic(content);
+            }
+        };
     }
 
     // ================= CONVERSATION BINDING =================
@@ -319,6 +424,195 @@ public class ChatController {
         inputArea.setMinHeight(height);
     }
 
+    private String buildOutgoingMessageText(String typedText, ChatService.ImageAttachment imageAttachment) {
+        String base = typedText == null ? "" : typedText.trim();
+        if (base.isEmpty() && imageAttachment != null) {
+            base = "Please analyze the attached image.";
+        }
+        if (imageAttachment == null) {
+            return base;
+        }
+        return base + "\n\n[Attached image: " + imageAttachment.fileName() + "]";
+    }
+
+    private void chooseImageAttachment() {
+        if (inputArea == null || inputArea.getScene() == null) {
+            return;
+        }
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Select image");
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("Image Files", "*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif", "*.bmp")
+        );
+        Window window = inputArea.getScene().getWindow();
+        File file = chooser.showOpenDialog(window);
+        if (file == null) {
+            return;
+        }
+        try {
+            Path path = file.toPath();
+            if (!Files.isRegularFile(path)) {
+                showNotification("✗ Image file not found");
+                return;
+            }
+            long size = Files.size(path);
+            if (size <= 0) {
+                showNotification("✗ Image file is empty");
+                return;
+            }
+            if (size > MAX_IMAGE_ATTACHMENT_BYTES) {
+                showNotification("✗ Image is too large (max 8 MB)");
+                return;
+            }
+
+            String mimeType = normalizeMimeType(Files.probeContentType(path), file.getName());
+            if (!isSupportedImageMimeType(mimeType)) {
+                showNotification("✗ Unsupported image type");
+                return;
+            }
+
+            byte[] imageBytes = Files.readAllBytes(path);
+            setPendingImageAttachment(new ChatService.ImageAttachment(file.getName(), mimeType, imageBytes));
+            showNotification("Image attached: " + file.getName());
+        } catch (IOException ex) {
+            showNotification("✗ Failed to attach image: " + ex.getMessage());
+        }
+    }
+
+    private boolean tryAttachImageFromClipboard() {
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        if (!clipboard.hasImage()) {
+            return false;
+        }
+        Image clipboardImage = clipboard.getImage();
+        if (clipboardImage == null) {
+            return false;
+        }
+        try {
+            int width = Math.max(1, (int) Math.round(clipboardImage.getWidth()));
+            int height = Math.max(1, (int) Math.round(clipboardImage.getHeight()));
+            if (width > 8192 || height > 8192) {
+                showNotification("✗ Clipboard image is too large");
+                return false;
+            }
+
+            if (clipboardImage.getPixelReader() == null) {
+                showNotification("✗ Clipboard image is not readable");
+                return false;
+            }
+
+            BufferedImage bufferedImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    bufferedImage.setRGB(x, y, clipboardImage.getPixelReader().getArgb(x, y));
+                }
+            }
+
+            byte[] pngBytes;
+            try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                if (!ImageIO.write(bufferedImage, "png", out)) {
+                    showNotification("✗ Failed to encode clipboard image");
+                    return false;
+                }
+                pngBytes = out.toByteArray();
+            }
+
+            if (pngBytes.length > MAX_IMAGE_ATTACHMENT_BYTES) {
+                showNotification("✗ Clipboard image is too large (max 8 MB)");
+                return false;
+            }
+
+            setPendingImageAttachment(new ChatService.ImageAttachment("clipboard-image.png", "image/png", pngBytes));
+            showNotification("Image pasted from clipboard");
+            return true;
+        } catch (Exception ex) {
+            showNotification("✗ Failed to paste image: " + ex.getMessage());
+            return false;
+        }
+    }
+
+    private void setPendingImageAttachment(ChatService.ImageAttachment attachment) {
+        pendingImageAttachment = attachment;
+        updateAttachmentPreview();
+    }
+
+    private void clearPendingImageAttachment() {
+        pendingImageAttachment = null;
+        updateAttachmentPreview();
+    }
+
+    private void updateAttachmentPreview() {
+        boolean hasAttachment = pendingImageAttachment != null;
+        hasPendingImage.set(hasAttachment);
+
+        if (attachmentPreviewBar != null) {
+            attachmentPreviewBar.setVisible(hasAttachment);
+            attachmentPreviewBar.setManaged(hasAttachment);
+        }
+        if (attachmentPreviewLabel != null) {
+            attachmentPreviewLabel.setText(hasAttachment
+                    ? pendingImageAttachment.fileName() + " (" + formatBytes(pendingImageAttachment.data().length) + ")"
+                    : "");
+        }
+        if (attachmentPreviewThumb != null) {
+            if (hasAttachment) {
+                try {
+                    attachmentPreviewThumb.setImage(new Image(new ByteArrayInputStream(pendingImageAttachment.data())));
+                } catch (Exception ignored) {
+                    attachmentPreviewThumb.setImage(null);
+                }
+            } else {
+                attachmentPreviewThumb.setImage(null);
+            }
+        }
+        if (attachmentRemoveButton != null) {
+            attachmentRemoveButton.setDisable(!hasAttachment || waitingForResponse.get());
+        }
+    }
+
+    private String formatBytes(int sizeBytes) {
+        if (sizeBytes < 1024) {
+            return sizeBytes + " B";
+        }
+        double kb = sizeBytes / 1024.0;
+        if (kb < 1024) {
+            return String.format(Locale.ROOT, "%.1f KB", kb);
+        }
+        double mb = kb / 1024.0;
+        return String.format(Locale.ROOT, "%.2f MB", mb);
+    }
+
+    private String normalizeMimeType(String detectedMimeType, String filename) {
+        if (detectedMimeType != null && !detectedMimeType.isBlank()) {
+            return detectedMimeType.toLowerCase(Locale.ROOT);
+        }
+        String name = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) {
+            return "image/jpeg";
+        }
+        if (name.endsWith(".webp")) {
+            return "image/webp";
+        }
+        if (name.endsWith(".gif")) {
+            return "image/gif";
+        }
+        if (name.endsWith(".bmp")) {
+            return "image/bmp";
+        }
+        return "image/png";
+    }
+
+    private boolean isSupportedImageMimeType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return false;
+        }
+        return mimeType.equals("image/png")
+                || mimeType.equals("image/jpeg")
+                || mimeType.equals("image/webp")
+                || mimeType.equals("image/gif")
+                || mimeType.equals("image/bmp");
+    }
+
     // ================= SEND FLOW =================
     private void sendMessage() {
         Conversation requestConversation = conversation;
@@ -326,22 +620,35 @@ public class ChatController {
             return;
         }
 
-        String text = inputArea.getText().trim();
-        if (text.isEmpty()) {
+        String typedText = inputArea.getText() == null ? "" : inputArea.getText().trim();
+        ChatService.ImageAttachment imageAttachment = pendingImageAttachment;
+        if (typedText.isEmpty() && imageAttachment == null) {
             return;
         }
         if (inFlightRequest != null && !inFlightRequest.isDone()) {
             return;
         }
 
+        String text = buildOutgoingMessageText(typedText, imageAttachment);
         int previousSize = requestConversation.getMessages().size();
         String previousTitle = requestConversation.getTitle();
-        Message editTarget = isMinorEditRequest(text) ? findLastAssistantMessage(requestConversation) : null;
+        Message editTarget = imageAttachment == null && isMinorEditRequest(text)
+                ? findLastAssistantMessage(requestConversation)
+                : null;
+        ChatService.RequestMode selectedMode = resolveSelectedMode();
         inputArea.clear();
+        clearPendingImageAttachment();
         setComposerBusy(true);
         stopResponseAnimations();
+        pendingImageGenerationRequest = isImageGenerationRequest(typedText, imageAttachment, selectedMode);
+        pendingGenerationLabelBase = pendingImageGenerationRequest ? IMAGE_GENERATING_LABEL : DEFAULT_GENERATING_LABEL;
 
-        CompletableFuture<Message> requestFuture = chatService.sendMessageAsync(requestConversation, text);
+        CompletableFuture<Message> requestFuture = chatService.sendMessageAsync(
+                requestConversation,
+                text,
+                imageAttachment,
+                selectedMode
+        );
         inFlightRequest = requestFuture;
 
         for (int i = previousSize; i < requestConversation.getMessages().size(); i++) {
@@ -405,6 +712,40 @@ public class ChatController {
         return !MAJOR_REWRITE_REQUEST_PATTERN.matcher(normalized).find();
     }
 
+    private boolean isImageGenerationRequest(String userText,
+                                             ChatService.ImageAttachment imageAttachment,
+                                             ChatService.RequestMode selectedMode) {
+        if (imageAttachment != null) {
+            return false;
+        }
+        if (selectedMode == ChatService.RequestMode.LEONARDO || selectedMode == ChatService.RequestMode.FREEPIK) {
+            return true;
+        }
+        if (userText == null || userText.isBlank()) {
+            return false;
+        }
+        String normalized = userText.toLowerCase(Locale.ROOT);
+        boolean mentionsVisual = containsAny(normalized,
+                "image", "photo", "picture", "art", "illustration", "logo", "icon", "poster", "wallpaper");
+        boolean mentionsCreate = containsAny(normalized,
+                "generate", "create", "make", "design", "draw", "render");
+        return containsAny(normalized,
+                "text to image", "image generation", "generate an image", "create an image", "make an image")
+                || (mentionsVisual && mentionsCreate);
+    }
+
+    private boolean containsAny(String text, String... terms) {
+        if (text == null || terms == null) {
+            return false;
+        }
+        for (String term : terms) {
+            if (term != null && !term.isBlank() && text.contains(term)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private Message findLastAssistantMessage(Conversation targetConversation) {
         if (targetConversation == null) {
             return null;
@@ -441,7 +782,7 @@ public class ChatController {
         row.setMaxWidth(Double.MAX_VALUE);
         row.setAlignment(Pos.TOP_LEFT);
 
-        Label generatingLabel = new Label("Cortex is generating");
+        Label generatingLabel = new Label(pendingGenerationLabelBase);
         generatingLabel.setWrapText(true);
         applyResponsiveMaxWidth(generatingLabel);
         generatingLabel.getStyleClass().addAll("message-text", "message-generating-text");
@@ -469,7 +810,9 @@ public class ChatController {
             return;
         }
 
-        final String base = "Cortex is generating";
+        final String base = pendingGenerationLabelBase == null || pendingGenerationLabelBase.isBlank()
+                ? DEFAULT_GENERATING_LABEL
+                : pendingGenerationLabelBase;
         final int[] dots = {0};
         pendingBotBubbleLabel.setText(base);
 
@@ -507,6 +850,8 @@ public class ChatController {
         streamingActiveNode = null;
         streamingActiveVBox = null;
         streamingFinalizedCount = 0;
+        pendingImageGenerationRequest = false;
+        pendingGenerationLabelBase = DEFAULT_GENERATING_LABEL;
     }
 
     private void stopResponseAnimations() {
@@ -543,6 +888,14 @@ public class ChatController {
 
         String fullText = responseMessage.getContent() == null ? "" : responseMessage.getContent();
         if (fullText.isEmpty()) {
+            replacePendingBubbleWithFinal(responseMessage);
+            if (onComplete != null) {
+                onComplete.run();
+            }
+            return;
+        }
+
+        if (pendingImageGenerationRequest || MARKDOWN_IMAGE_PATTERN.matcher(fullText).find()) {
             replacePendingBubbleWithFinal(responseMessage);
             if (onComplete != null) {
                 onComplete.run();
@@ -823,7 +1176,7 @@ public class ChatController {
         row.setMaxWidth(Double.MAX_VALUE);
 
         Node content = msg.getSender() == Message.Sender.USER
-            ? buildCompactUserContent(msg.getContent())
+            ? buildCompactUserContent(msg)
             : buildMessageContent(msg.getContent());
 
         VBox bubble = new VBox(6);
@@ -844,8 +1197,14 @@ public class ChatController {
             revert.play();
         });
 
+        Button downloadIcon = createMessageDownloadButton(msg);
+
         // Wrap bubble + copy icon in a VBox, with the icon below at the appropriate corner
-        HBox copyRow = new HBox(copyIcon);
+        HBox copyRow = new HBox(4);
+        copyRow.getChildren().add(copyIcon);
+        if (downloadIcon != null) {
+            copyRow.getChildren().add(downloadIcon);
+        }
         copyRow.getStyleClass().add("bubble-copy-row");
 
         VBox bubbleWrapper = new VBox(2, bubble, copyRow);
@@ -990,13 +1349,18 @@ public class ChatController {
 
         Node lineContainerNode = selectedArea;
         while (lineContainerNode != null
-                && (!lineContainerNode.getStyleClass().contains("message-line-container")
-                || !(lineContainerNode.getParent() instanceof VBox))) {
+                && !lineContainerNode.getStyleClass().contains("message-line-container")) {
             lineContainerNode = lineContainerNode.getParent();
         }
 
-        if (lineContainerNode != null && lineContainerNode.getParent() instanceof VBox markdownContainer
-                && markdownContainer.getStyleClass().contains("message-markdown")) {
+        Node markdownContainerNode = lineContainerNode == null ? null : lineContainerNode.getParent();
+        while (markdownContainerNode != null
+                && (!(markdownContainerNode instanceof VBox)
+                || !markdownContainerNode.getStyleClass().contains("message-markdown"))) {
+            markdownContainerNode = markdownContainerNode.getParent();
+        }
+
+        if (lineContainerNode != null && markdownContainerNode instanceof VBox markdownContainer) {
             return new SelectedLineContext(selectedText, lineContainerNode, markdownContainer, selectedArea);
         }
         return null;
@@ -1269,13 +1633,29 @@ public class ChatController {
         return container;
     }
 
-    private Node buildCompactUserContent(String content) {
-        String text = content == null ? "" : content;
-        Label label = new Label(text);
-        label.setWrapText(true);
-        label.getStyleClass().add("message-text");
-        applyResponsiveMaxWidth(label);
-        return label;
+    private Node buildCompactUserContent(Message msg) {
+        VBox container = new VBox(8);
+        applyResponsiveMaxWidth(container);
+
+        String text = msg == null ? "" : stripAttachedImageMarker(msg.getContent(), msg.hasImageAttachment());
+        if (!text.isBlank()) {
+            Label label = new Label(text);
+            label.setWrapText(true);
+            label.getStyleClass().add("message-text");
+            applyResponsiveMaxWidth(label);
+            container.getChildren().add(label);
+        }
+
+        if (msg != null && msg.hasImageAttachment()) {
+            container.getChildren().add(createAttachedImageNode(msg));
+        }
+
+        if (container.getChildren().isEmpty()) {
+            Label empty = new Label(" ");
+            empty.getStyleClass().add("message-text");
+            container.getChildren().add(empty);
+        }
+        return container;
     }
 
     private Node createMarkdownBlock(String textValue) {
@@ -1283,13 +1663,186 @@ public class ChatController {
         VBox markdownBlock = new VBox(6);
         markdownBlock.getStyleClass().add("message-markdown");
         applyResponsiveMaxWidth(markdownBlock);
-        populateFormattedLines(markdownBlock, safeText);
 
-        if (markdownBlock.getChildren().isEmpty()) {
-            TextFlow empty = createInlineTextFlow(" ");
-            markdownBlock.getChildren().add(empty);
+        Matcher imageMatcher = MARKDOWN_IMAGE_PATTERN.matcher(safeText);
+        int current = 0;
+        boolean hasContent = false;
+
+        while (imageMatcher.find()) {
+            String leadingText = safeText.substring(current, imageMatcher.start()).trim();
+            if (!leadingText.isEmpty()) {
+                markdownBlock.getChildren().add(createFormattedMarkdownSection(leadingText));
+                hasContent = true;
+            }
+
+            String altText = imageMatcher.group(1);
+            String imageSource = imageMatcher.group(2) == null ? "" : imageMatcher.group(2).trim();
+            if (!imageSource.isEmpty()) {
+                markdownBlock.getChildren().add(createRemoteImageNode(imageSource, altText));
+                hasContent = true;
+            }
+            current = imageMatcher.end();
+        }
+
+        if (current < safeText.length()) {
+            String trailingText = safeText.substring(current).trim();
+            if (!trailingText.isEmpty()) {
+                markdownBlock.getChildren().add(createFormattedMarkdownSection(trailingText));
+                hasContent = true;
+            }
+        }
+
+        if (!hasContent) {
+            markdownBlock.getChildren().add(createFormattedMarkdownSection(safeText));
         }
         return markdownBlock;
+    }
+
+    private Node createFormattedMarkdownSection(String textValue) {
+        String safeText = textValue == null ? "" : textValue;
+        VBox section = new VBox(6);
+        section.getStyleClass().add("message-markdown-section");
+        applyResponsiveMaxWidth(section);
+        populateFormattedLines(section, safeText);
+
+        if (section.getChildren().isEmpty()) {
+            TextFlow empty = createInlineTextFlow(" ");
+            section.getChildren().add(empty);
+        }
+        return section;
+    }
+
+    private String stripAttachedImageMarker(String content, boolean hasImageAttachment) {
+        if (!hasImageAttachment || content == null || content.isBlank()) {
+            return content == null ? "" : content;
+        }
+        return ATTACHED_IMAGE_MARKER_PATTERN.matcher(content).replaceFirst("").trim();
+    }
+
+    private Node createAttachedImageNode(Message msg) {
+        if (msg == null || !msg.hasImageAttachment()) {
+            return createImageNode(null, "Image preview unavailable", false);
+        }
+        try {
+            Image image = new Image(new ByteArrayInputStream(msg.getImageData()));
+            String caption = msg.getImageFileName() == null || msg.getImageFileName().isBlank()
+                    ? "Attached image"
+                    : msg.getImageFileName();
+            return createImageNode(image, caption, false);
+        } catch (Exception ignored) {
+            return createImageNode(null, "Image preview unavailable", false);
+        }
+    }
+
+    private Node createRemoteImageNode(String imageSource, String altText) {
+        String caption = altText == null || altText.isBlank() ? "Generated image" : altText.trim();
+        try {
+            return createImageNode(new Image(imageSource, true), caption, true);
+        } catch (Exception ignored) {
+            return createImageNode(null, caption, true);
+        }
+    }
+
+    private Node createImageNode(Image image, String caption, boolean remoteImage) {
+        VBox container = new VBox(6);
+        container.getStyleClass().add("message-image-block");
+        applyResponsiveMaxWidth(container);
+
+        StackPane frame = new StackPane();
+        frame.getStyleClass().add("message-image-frame");
+        frame.setMinHeight(120);
+        applyResponsiveMaxWidth(frame);
+
+        Label placeholder = new Label(remoteImage ? "Loading image preview..." : "Image preview unavailable");
+        placeholder.getStyleClass().add("message-image-placeholder");
+        placeholder.setWrapText(true);
+        placeholder.setMaxWidth(Double.MAX_VALUE);
+
+        ImageView imageView = new ImageView();
+        imageView.getStyleClass().add("message-image-view");
+        imageView.setPreserveRatio(true);
+        imageView.setSmooth(true);
+        bindResponsiveImageWidth(imageView);
+
+        frame.getChildren().addAll(placeholder, imageView);
+        refreshImageNodeState(image, imageView, placeholder, remoteImage);
+        if (image != null) {
+            image.progressProperty().addListener((obs, oldValue, newValue) ->
+                    refreshImageNodeState(image, imageView, placeholder, remoteImage));
+            image.errorProperty().addListener((obs, oldValue, newValue) ->
+                    refreshImageNodeState(image, imageView, placeholder, remoteImage));
+        }
+
+        container.getChildren().add(frame);
+        if (caption != null && !caption.isBlank()) {
+            Label captionLabel = new Label(caption);
+            captionLabel.getStyleClass().add("message-image-caption");
+            captionLabel.setWrapText(true);
+            container.getChildren().add(captionLabel);
+        }
+        return container;
+    }
+
+    private Button createMessageDownloadButton(Message msg) {
+        Runnable downloadAction = resolveMessageDownloadAction(msg);
+        if (downloadAction == null) {
+            return null;
+        }
+
+        Button downloadIcon = new Button("\u2193");
+        downloadIcon.getStyleClass().addAll("bubble-copy-icon", "message-image-download");
+        downloadIcon.setFocusTraversable(false);
+        downloadIcon.setOnAction(event -> downloadAction.run());
+        Tooltip.install(downloadIcon, new Tooltip("Download image"));
+        return downloadIcon;
+    }
+
+    private Runnable resolveMessageDownloadAction(Message msg) {
+        if (msg == null) {
+            return null;
+        }
+        if (msg.hasImageAttachment()) {
+            String fileName = ensureImageExtension(msg.getImageFileName(), msg.getImageMimeType());
+            return () -> saveImageBytesToDisk(msg.getImageData(), fileName);
+        }
+
+        String content = msg.getContent();
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+
+        Matcher matcher = MARKDOWN_IMAGE_PATTERN.matcher(content);
+        if (!matcher.find()) {
+            return null;
+        }
+
+        String altText = matcher.group(1);
+        String imageSource = matcher.group(2) == null ? "" : matcher.group(2).trim();
+        if (imageSource.isEmpty()) {
+            return null;
+        }
+        String caption = altText == null || altText.isBlank() ? "Generated image" : altText.trim();
+        String suggestedFileName = suggestImageFileName(imageSource, caption);
+        return () -> downloadRemoteImageToDisk(imageSource, suggestedFileName);
+    }
+
+    private void refreshImageNodeState(Image image, ImageView imageView, Label placeholder, boolean remoteImage) {
+        if (imageView == null || placeholder == null) {
+            return;
+        }
+        boolean ready = image != null && !image.isError() && image.getWidth() > 0 && image.getHeight() > 0;
+        imageView.setImage(ready ? image : null);
+        imageView.setVisible(ready);
+        imageView.setManaged(ready);
+
+        boolean showPlaceholder = !ready;
+        placeholder.setVisible(showPlaceholder);
+        placeholder.setManaged(showPlaceholder);
+        if (showPlaceholder) {
+            placeholder.setText(image != null && image.isError()
+                    ? "Image preview unavailable"
+                    : (remoteImage ? "Loading image preview..." : "Image preview unavailable"));
+        }
     }
 
     private TextFlow createInlineTextFlow(String textValue) {
@@ -1389,6 +1942,10 @@ public class ChatController {
         return Math.max(MESSAGE_MIN_WIDTH, Math.min(MESSAGE_MAX_WIDTH_CAP, preferred));
     }
 
+    private double computeImageMaxWidth() {
+        return Math.max(220, computeMessageMaxWidth() - 24);
+    }
+
     private void applyResponsiveMaxWidth(Region node) {
         if (node == null || messageBox == null) {
             return;
@@ -1407,6 +1964,163 @@ public class ChatController {
                 this::computeMessageMaxWidth,
                 messageBox.widthProperty()
         ));
+    }
+
+    private void bindResponsiveImageWidth(ImageView imageView) {
+        if (imageView == null) {
+            return;
+        }
+        if (messageBox == null) {
+            imageView.setFitWidth(360);
+            return;
+        }
+        imageView.fitWidthProperty().bind(Bindings.createDoubleBinding(
+                this::computeImageMaxWidth,
+                messageBox.widthProperty()
+        ));
+    }
+
+    private void saveImageBytesToDisk(byte[] imageBytes, String suggestedFileName) {
+        if (imageBytes == null || imageBytes.length == 0) {
+            showNotification("✗ Image data is unavailable");
+            return;
+        }
+        File targetFile = chooseImageSaveFile(suggestedFileName);
+        if (targetFile == null) {
+            return;
+        }
+        try {
+            Files.write(targetFile.toPath(), imageBytes);
+            showNotification("✓ Image downloaded to " + targetFile.getName());
+        } catch (IOException ex) {
+            showNotification("✗ Failed to save image: " + ex.getMessage());
+        }
+    }
+
+    private void downloadRemoteImageToDisk(String imageSource, String suggestedFileName) {
+        if (imageSource == null || imageSource.isBlank()) {
+            showNotification("✗ Image URL is unavailable");
+            return;
+        }
+        File targetFile = chooseImageSaveFile(suggestedFileName);
+        if (targetFile == null) {
+            return;
+        }
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(imageSource))
+                        .timeout(java.time.Duration.ofSeconds(60))
+                        .GET()
+                        .build();
+                HttpResponse<byte[]> response = imageDownloadClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    throw new IOException("HTTP " + response.statusCode());
+                }
+                Files.write(targetFile.toPath(), response.body());
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        }).whenComplete((ignored, error) -> Platform.runLater(() -> {
+            if (error != null) {
+                Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                        ? error.getCause()
+                        : error;
+                String message = cause == null || cause.getMessage() == null ? "Unknown error" : cause.getMessage();
+                showNotification("✗ Failed to download image: " + message);
+                return;
+            }
+            showNotification("✓ Image downloaded to " + targetFile.getName());
+        }));
+    }
+
+    private File chooseImageSaveFile(String suggestedFileName) {
+        if (messageBox == null || messageBox.getScene() == null) {
+            showNotification("✗ Save dialog is unavailable");
+            return null;
+        }
+
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Download image");
+        chooser.setInitialFileName(normalizeDownloadFileName(suggestedFileName));
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("Image Files", "*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif", "*.bmp")
+        );
+        Window window = messageBox.getScene().getWindow();
+        return chooser.showSaveDialog(window);
+    }
+
+    private String normalizeDownloadFileName(String suggestedFileName) {
+        String cleaned = sanitizeFileName(suggestedFileName == null || suggestedFileName.isBlank()
+                ? DEFAULT_DOWNLOADED_IMAGE_NAME
+                : suggestedFileName.trim());
+        return hasKnownImageExtension(cleaned) ? cleaned : cleaned + ".png";
+    }
+
+    private String suggestImageFileName(String imageSource, String caption) {
+        String fallbackName = caption == null || caption.isBlank() ? DEFAULT_DOWNLOADED_IMAGE_NAME : caption;
+        String extension = extractImageExtension(imageSource);
+        String baseName = fallbackName;
+        if (baseName.endsWith(".") || baseName.endsWith("_")) {
+            baseName = baseName.substring(0, baseName.length() - 1);
+        }
+        if (baseName.isBlank()) {
+            baseName = "generated-image";
+        }
+        return hasKnownImageExtension(baseName) ? baseName : sanitizeFileName(baseName) + extension;
+    }
+
+    private String ensureImageExtension(String fileName, String mimeType) {
+        String normalized = sanitizeFileName(fileName == null || fileName.isBlank()
+                ? "attached-image"
+                : fileName.trim());
+        if (hasKnownImageExtension(normalized)) {
+            return normalized;
+        }
+        return normalized + extensionFromMimeType(mimeType);
+    }
+
+    private boolean hasKnownImageExtension(String fileName) {
+        String lower = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".png")
+                || lower.endsWith(".jpg")
+                || lower.endsWith(".jpeg")
+                || lower.endsWith(".webp")
+                || lower.endsWith(".gif")
+                || lower.endsWith(".bmp");
+    }
+
+    private String extractImageExtension(String imageSource) {
+        if (imageSource != null && !imageSource.isBlank()) {
+            try {
+                String path = URI.create(imageSource).getPath();
+                if (path != null) {
+                    String lower = path.toLowerCase(Locale.ROOT);
+                    for (String extension : List.of(".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")) {
+                        if (lower.endsWith(extension)) {
+                            return extension;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // Fall back to default extension.
+            }
+        }
+        return ".png";
+    }
+
+    private String extensionFromMimeType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return ".png";
+        }
+        return switch (mimeType.toLowerCase(Locale.ROOT)) {
+            case "image/jpeg", "image/jpg" -> ".jpg";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            case "image/bmp" -> ".bmp";
+            default -> ".png";
+        };
     }
 
     private void copyCodeToClipboard(String code) {
@@ -2364,9 +3078,35 @@ public class ChatController {
     private void setComposerBusy(boolean busy) {
         waitingForResponse.set(busy);
         inputArea.setDisable(busy);
+        if (modelModeSelector != null) {
+            modelModeSelector.setDisable(busy);
+        }
+        if (attachImageButton != null) {
+            attachImageButton.setDisable(busy);
+        }
+        if (attachmentRemoveButton != null) {
+            attachmentRemoveButton.setDisable(busy || pendingImageAttachment == null);
+        }
         if (!busy) {
             inputArea.requestFocus();
         }
+    }
+
+    private ChatService.RequestMode resolveSelectedMode() {
+        if (modelModeSelector == null || modelModeSelector.getValue() == null) {
+            return ChatService.RequestMode.BEST;
+        }
+        ChatService.RequestMode selectedMode = switch (modelModeSelector.getValue()) {
+            case "Groq" -> ChatService.RequestMode.GROQ;
+            case "Google Vision" -> ChatService.RequestMode.GOOGLE_VISION;
+            case "Leonardo" -> ChatService.RequestMode.LEONARDO;
+            case "Freepik" -> ChatService.RequestMode.FREEPIK;
+            default -> ChatService.RequestMode.BEST;
+        };
+        if (pendingImageAttachment != null && selectedMode == ChatService.RequestMode.GROQ) {
+            return ChatService.RequestMode.GOOGLE_VISION;
+        }
+        return selectedMode;
     }
 
     // ================= EXPORT METHODS =================

@@ -17,6 +17,7 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -27,6 +28,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * In-memory chat service with provider routing and API key failover.
@@ -41,10 +44,15 @@ public class ChatService {
     private static final String DEFAULT_GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com";
     private static final String DEFAULT_LEONARDO_BASE_URL = "https://cloud.leonardo.ai/api/rest/v1";
     private static final String DEFAULT_LEONARDO_MODEL_ID = "phoenix";
+    private static final String DEFAULT_FREEPIK_BASE_URL = "https://api.freepik.com/v1/ai";
+    private static final String DEFAULT_FREEPIK_MODEL = "z-image";
     private static final String APP_PROPERTIES_FILE = "app.properties";
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(90);
     private static final int LEONARDO_POLL_ATTEMPTS = 8;
     private static final long LEONARDO_POLL_DELAY_MS = 1100;
+    private static final int FREEPIK_POLL_ATTEMPTS = 12;
+    private static final long FREEPIK_POLL_DELAY_MS = 1200;
+    private static final Pattern HTTP_URL_PATTERN = Pattern.compile("https?://[^\"\\\\\\s]+");
 
     private static final Set<String> STOP_WORDS = new HashSet<>(Arrays.asList(
             "a", "an", "and", "are", "as", "at", "be", "but", "by",
@@ -88,6 +96,30 @@ public class ChatService {
     });
     private final SettingsManager settingsManager = SettingsManager.getInstance();
 
+    public record ImageAttachment(String fileName, String mimeType, byte[] data) {
+        public ImageAttachment {
+            fileName = fileName == null || fileName.isBlank() ? "image" : fileName.trim();
+            mimeType = mimeType == null || mimeType.isBlank() ? "image/png" : mimeType.trim().toLowerCase(Locale.ROOT);
+            data = data == null ? new byte[0] : Arrays.copyOf(data, data.length);
+        }
+
+        public String base64Data() {
+            return Base64.getEncoder().encodeToString(data);
+        }
+
+        public boolean hasData() {
+            return data.length > 0;
+        }
+    }
+
+    public enum RequestMode {
+        BEST,
+        GROQ,
+        GOOGLE_VISION,
+        LEONARDO,
+        FREEPIK
+    }
+
     public ChatService() {
         // Configuration is resolved lazily per request so Settings updates take effect immediately.
     }
@@ -105,16 +137,39 @@ public class ChatService {
 
     // ================= MESSAGE API =================
     public CompletableFuture<Message> sendMessageAsync(Conversation conv, String text) {
+        return sendMessageAsync(conv, text, null, RequestMode.BEST);
+    }
+
+    public CompletableFuture<Message> sendMessageAsync(Conversation conv, String text, ImageAttachment imageAttachment) {
+        return sendMessageAsync(conv, text, imageAttachment, RequestMode.BEST);
+    }
+
+    public CompletableFuture<Message> sendMessageAsync(Conversation conv,
+                                                       String text,
+                                                       ImageAttachment imageAttachment,
+                                                       RequestMode requestMode) {
         if (shouldAutoRenameConversation(conv)) {
             conv.setTitle(buildTitleFromUserText(text));
             conv.setTitleFinalized(true);
         }
 
-        Message userMsg = new Message(Message.Sender.USER, text);
+        Message userMsg = imageAttachment != null && imageAttachment.hasData()
+                ? new Message(
+                Message.Sender.USER,
+                text,
+                imageAttachment.fileName(),
+                imageAttachment.mimeType(),
+                imageAttachment.data()
+        )
+                : new Message(Message.Sender.USER, text);
         conv.addMessage(userMsg);
         List<Message> historySnapshot = new ArrayList<>(conv.getMessages());
 
-        return CompletableFuture.supplyAsync(() -> requestAssistantReply(historySnapshot), apiExecutor);
+        RequestMode effectiveMode = requestMode == null ? RequestMode.BEST : requestMode;
+        return CompletableFuture.supplyAsync(
+                () -> requestAssistantReply(historySnapshot, imageAttachment, effectiveMode),
+                apiExecutor
+        );
     }
 
     public void appendAssistantMessage(Conversation conv, Message botMessage) {
@@ -131,16 +186,24 @@ public class ChatService {
             String contextPrompt = "The user selected the following text:\n\n"
                     + selectedText + "\n\nUser question: " + question;
             List<Message> context = List.of(new Message(Message.Sender.USER, contextPrompt));
-            Message reply = requestAssistantReply(context);
+            Message reply = requestAssistantReply(context, null, RequestMode.BEST);
             return reply.getContent();
         }, apiExecutor);
     }
 
-    private Message requestAssistantReply(List<Message> historySnapshot) {
+    private Message requestAssistantReply(List<Message> historySnapshot,
+                                          ImageAttachment imageAttachment,
+                                          RequestMode requestMode) {
         LoadedProperties loaded = loadAppProperties();
         String latestUserText = extractLatestUserMessage(historySnapshot);
-        ProviderType requestedProvider = resolveRequestedProvider(latestUserText);
-        List<ProviderType> attemptOrder = buildProviderAttemptOrder(requestedProvider, latestUserText);
+        boolean hasImageAttachment = imageAttachment != null && imageAttachment.hasData();
+        ProviderType requestedProvider = resolveRequestedProvider(latestUserText, hasImageAttachment, requestMode);
+        List<ProviderType> attemptOrder = buildProviderAttemptOrder(
+                requestedProvider,
+                latestUserText,
+                hasImageAttachment,
+                requestMode
+        );
 
         List<String> missingProviders = new ArrayList<>();
         String lastError = null;
@@ -152,7 +215,7 @@ public class ChatService {
                 continue;
             }
 
-            ProviderAttemptResult result = requestWithProviderFailover(config, historySnapshot, latestUserText);
+            ProviderAttemptResult result = requestWithProviderFailover(config, historySnapshot, latestUserText, imageAttachment);
             if (result.success()) {
                 return new Message(Message.Sender.BOT, result.content());
             }
@@ -169,13 +232,15 @@ public class ChatService {
 
     private ProviderAttemptResult requestWithProviderFailover(ProviderConfig config,
                                                               List<Message> historySnapshot,
-                                                              String latestUserText) {
+                                                              String latestUserText,
+                                                              ImageAttachment imageAttachment) {
         String lastError = null;
         for (String apiKey : config.apiKeys()) {
             ProviderCallResult callResult = switch (config.providerType()) {
                 case GROQ -> callGroqChat(config, apiKey, historySnapshot);
-                case GOOGLE_AI_STUDIO -> callGoogleChat(config, apiKey, historySnapshot);
+                case GOOGLE_AI_STUDIO -> callGoogleChat(config, apiKey, historySnapshot, imageAttachment);
                 case LEONARDO -> callLeonardoImage(config, apiKey, latestUserText);
+                case FREEPIK -> callFreepikImage(config, apiKey, latestUserText);
             };
 
             if (callResult.success()) {
@@ -221,14 +286,17 @@ public class ChatService {
         }
     }
 
-    private ProviderCallResult callGoogleChat(ProviderConfig config, String apiKey, List<Message> historySnapshot) {
+    private ProviderCallResult callGoogleChat(ProviderConfig config,
+                                              String apiKey,
+                                              List<Message> historySnapshot,
+                                              ImageAttachment imageAttachment) {
         try {
             String endpoint = trimTrailingSlash(config.baseUrl())
                     + "/v1beta/models/"
                     + config.modelName()
                     + ":generateContent?key="
                     + urlEncode(apiKey);
-            String body = buildGoogleChatRequestJson(historySnapshot);
+            String body = buildGoogleChatRequestJson(historySnapshot, imageAttachment);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
@@ -330,16 +398,114 @@ public class ChatService {
     }
 
     private String buildLeonardoResponseContent(String imageUrl, String generationId) {
-        StringBuilder out = new StringBuilder("Leonardo image generation completed.");
         if (imageUrl != null && !imageUrl.isBlank()) {
-            out.append("\n\n![Generated image](").append(imageUrl).append(")");
-        } else {
-            out.append("\n\nThe image request was accepted, but no direct URL was returned yet.");
+            return "![Generated image](" + imageUrl + ")";
         }
-        if (generationId != null && !generationId.isBlank()) {
-            out.append("\n\nGeneration ID: `").append(generationId).append("`");
+        return "Generating image...";
+    }
+
+    private ProviderCallResult callFreepikImage(ProviderConfig config, String apiKey, String latestUserText) {
+        try {
+            if (!isImageGenerationPrompt(latestUserText)) {
+                return ProviderCallResult.failure(
+                        "Freepik mode is for image generation. Ask to generate an image, logo, art, or illustration.",
+                        false
+                );
+            }
+
+            String modelSlug = normalizeFreepikModel(config.modelName());
+            String endpoint = buildFreepikImageEndpoint(config.baseUrl(), modelSlug);
+            String body = buildFreepikGenerationRequestJson(latestUserText);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint))
+                    .header("x-freepik-api-key", apiKey)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .timeout(REQUEST_TIMEOUT)
+                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                String error = extractErrorMessage(response.body());
+                String details = providerDisplayName(config.providerType()) + " API HTTP "
+                        + response.statusCode() + " - " + error;
+                return ProviderCallResult.failure(details, shouldRetryWithNextKey(response.statusCode()));
+            }
+
+            String imageUrl = extractFirstGeneratedAsset(response.body());
+            String taskId = extractFreepikTaskId(response.body());
+            if ((imageUrl == null || imageUrl.isBlank()) && taskId != null && !taskId.isBlank()) {
+                imageUrl = pollFreepikImageUrl(config.baseUrl(), apiKey, modelSlug, taskId);
+            }
+
+            String content = buildFreepikResponseContent(imageUrl, taskId, modelSlug);
+            return ProviderCallResult.success(content);
+        } catch (Throwable ex) {
+            String message = providerDisplayName(config.providerType()) + " request failed: " + ex.getMessage();
+            return ProviderCallResult.failure(message, true);
         }
-        return out.toString();
+    }
+
+    private String pollFreepikImageUrl(String baseUrl, String apiKey, String modelSlug, String taskId) {
+        String endpoint = buildFreepikImageEndpoint(baseUrl, modelSlug) + "/" + urlEncode(taskId);
+        for (int i = 0; i < FREEPIK_POLL_ATTEMPTS; i++) {
+            try {
+                Thread.sleep(FREEPIK_POLL_DELAY_MS);
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(endpoint))
+                        .header("x-freepik-api-key", apiKey)
+                        .header("Accept", "application/json")
+                        .timeout(REQUEST_TIMEOUT)
+                        .GET()
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    String imageUrl = extractFirstGeneratedAsset(response.body());
+                    if (imageUrl != null && !imageUrl.isBlank()) {
+                        return imageUrl;
+                    }
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return null;
+            } catch (Throwable ignored) {
+                // Keep polling until attempts are exhausted.
+            }
+        }
+        return null;
+    }
+
+    private String buildFreepikImageEndpoint(String baseUrl, String modelSlug) {
+        return trimTrailingSlash(baseUrl) + "/text-to-image/" + normalizeFreepikModel(modelSlug);
+    }
+
+    private String normalizeFreepikModel(String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            return DEFAULT_FREEPIK_MODEL;
+        }
+        String normalized = modelName.trim();
+        if ("freepik-default".equalsIgnoreCase(normalized)) {
+            return DEFAULT_FREEPIK_MODEL;
+        }
+        return normalized;
+    }
+
+    private String buildFreepikGenerationRequestJson(String prompt) {
+        String effectivePrompt = (prompt == null || prompt.isBlank())
+                ? "Create a high quality image"
+                : prompt.trim();
+        return "{" +
+                "\"prompt\":\"" + jsonEscape(effectivePrompt) + "\"" +
+                "}";
+    }
+
+    private String buildFreepikResponseContent(String imageUrl, String taskId, String modelSlug) {
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            return "![Generated image](" + imageUrl + ")";
+        }
+        return "Generating image...";
     }
 
     private String buildOpenAiChatRequestJson(List<Message> historySnapshot, String modelName) {
@@ -373,10 +539,19 @@ public class ChatService {
         return builder.toString();
     }
 
-    private String buildGoogleChatRequestJson(List<Message> historySnapshot) {
+    private String buildGoogleChatRequestJson(List<Message> historySnapshot, ImageAttachment imageAttachment) {
         List<Message> sorted = historySnapshot.stream()
                 .sorted(Comparator.comparing(Message::getTimestamp))
                 .toList();
+        int latestUserIndex = -1;
+        for (int i = sorted.size() - 1; i >= 0; i--) {
+            Message candidate = sorted.get(i);
+            if (candidate != null && candidate.getSender() == Message.Sender.USER) {
+                latestUserIndex = i;
+                break;
+            }
+        }
+        boolean canAttachImage = imageAttachment != null && imageAttachment.hasData();
 
         double temperature = settingsManager.getDouble("ai.temperature", 0.4);
         int maxTokens = settingsManager.getInt("ai.maxTokens", 4096);
@@ -395,19 +570,41 @@ public class ChatService {
         builder.append("\"contents\":[");
 
         boolean first = true;
-        for (Message msg : sorted) {
+        for (int i = 0; i < sorted.size(); i++) {
+            Message msg = sorted.get(i);
             if (!first) {
                 builder.append(",");
             }
             String role = msg.getSender() == Message.Sender.USER ? "user" : "model";
+            boolean attachImageToThisTurn = canAttachImage
+                    && msg.getSender() == Message.Sender.USER
+                    && i == latestUserIndex;
             builder.append("{\"role\":\"").append(role).append("\",\"parts\":[{\"text\":\"")
                     .append(jsonEscape(msg.getContent()))
-                    .append("\"}]}");
+                    .append("\"}");
+            if (attachImageToThisTurn) {
+                builder.append(",{\"inline_data\":{\"mime_type\":\"")
+                        .append(jsonEscape(imageAttachment.mimeType()))
+                        .append("\",\"data\":\"")
+                        .append(imageAttachment.base64Data())
+                        .append("\"}}");
+            }
+            builder.append("]}");
             first = false;
         }
 
         if (first) {
-            builder.append("{\"role\":\"user\",\"parts\":[{\"text\":\"Hello\"}]}");
+            builder.append("{\"role\":\"user\",\"parts\":[{\"text\":\"")
+                    .append(canAttachImage ? "Please analyze the attached image." : "Hello")
+                    .append("\"}");
+            if (canAttachImage) {
+                builder.append(",{\"inline_data\":{\"mime_type\":\"")
+                        .append(jsonEscape(imageAttachment.mimeType()))
+                        .append("\",\"data\":\"")
+                        .append(imageAttachment.base64Data())
+                        .append("\"}}");
+            }
+            builder.append("]}");
         }
 
         builder.append("]}");
@@ -563,6 +760,7 @@ public class ChatService {
             case GROQ -> resolveGroqConfig(props, source);
             case GOOGLE_AI_STUDIO -> resolveGoogleConfig(props, source);
             case LEONARDO -> resolveLeonardoConfig(props, source);
+            case FREEPIK -> resolveFreepikConfig(props, source);
         };
     }
 
@@ -599,6 +797,7 @@ public class ChatService {
         readIndexedPropertyValues(props, "groq_api_").forEach(value -> addIfPresent(keys, value));
         addIfPresent(keys, props.getProperty("past_api"));
         addIfPresent(keys, settingsManager.getString("ai.apiKey", ""));
+        addCsvValues(keys, settingsManager.getString("ai.apiKeys", ""));
 
         return new ProviderConfig(ProviderType.GROQ, baseUrl, modelName, List.copyOf(keys), source);
     }
@@ -649,11 +848,56 @@ public class ChatService {
         return new ProviderConfig(ProviderType.LEONARDO, baseUrl, modelName, List.copyOf(keys), source);
     }
 
-    private ProviderType resolveRequestedProvider(String latestUserText) {
-        String normalized = latestUserText == null ? "" : latestUserText.toLowerCase(Locale.ROOT);
+    private ProviderConfig resolveFreepikConfig(Properties props, AppPropertiesSource source) {
+        String baseUrl = firstNonBlank(
+                System.getenv("FREEPIK_BASE_URL"),
+                props.getProperty("freepik_base_url"),
+                DEFAULT_FREEPIK_BASE_URL
+        );
 
+        String modelName = normalizeFreepikModel(firstNonBlank(
+                System.getenv("FREEPIK_MODEL"),
+                props.getProperty("freepik_model"),
+                DEFAULT_FREEPIK_MODEL
+        ));
+
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        addCsvValues(keys, System.getenv("FREEPIK_API_KEYS"));
+        addIfPresent(keys, System.getenv("FREEPIK_API_KEY"));
+        addCsvValues(keys, props.getProperty("freepik_api_keys"));
+        readIndexedPropertyValues(props, "freepik_api_").forEach(value -> addIfPresent(keys, value));
+        addIfPresent(keys, props.getProperty("freepik_api"));
+
+        return new ProviderConfig(ProviderType.FREEPIK, baseUrl, modelName, List.copyOf(keys), source);
+    }
+
+    private ProviderType resolveRequestedProvider(String latestUserText,
+                                                  boolean hasImageAttachment,
+                                                  RequestMode requestMode) {
+        String normalized = latestUserText == null ? "" : latestUserText.toLowerCase(Locale.ROOT);
+        RequestMode mode = requestMode == null ? RequestMode.BEST : requestMode;
+
+        switch (mode) {
+            case GROQ:
+                return ProviderType.GROQ;
+            case GOOGLE_VISION:
+                return ProviderType.GOOGLE_AI_STUDIO;
+            case LEONARDO:
+                return ProviderType.LEONARDO;
+            case FREEPIK:
+                return ProviderType.FREEPIK;
+            case BEST:
+                break;
+        }
+
+        if (hasImageAttachment) {
+            return ProviderType.GOOGLE_AI_STUDIO;
+        }
         if (containsAny(normalized, "use leonardo", "with leonardo", "leonardo api", "leonardo")) {
             return ProviderType.LEONARDO;
+        }
+        if (containsAny(normalized, "use freepik", "with freepik", "freepik api", "freepik")) {
+            return ProviderType.FREEPIK;
         }
         if (containsAny(normalized, "use google", "google ai studio", "gemini", "use gemini")) {
             return ProviderType.GOOGLE_AI_STUDIO;
@@ -662,7 +906,7 @@ public class ChatService {
             return ProviderType.GROQ;
         }
         if (isImageGenerationPrompt(normalized)) {
-            return ProviderType.LEONARDO;
+            return ProviderType.FREEPIK;
         }
         if (isImageUnderstandingPrompt(normalized)) {
             return ProviderType.GOOGLE_AI_STUDIO;
@@ -670,9 +914,24 @@ public class ChatService {
         return ProviderType.GROQ;
     }
 
-    private List<ProviderType> buildProviderAttemptOrder(ProviderType requestedProvider, String latestUserText) {
+    private List<ProviderType> buildProviderAttemptOrder(ProviderType requestedProvider,
+                                                         String latestUserText,
+                                                         boolean hasImageAttachment,
+                                                         RequestMode requestMode) {
         List<ProviderType> order = new ArrayList<>();
+        RequestMode mode = requestMode == null ? RequestMode.BEST : requestMode;
+
+        if (mode != RequestMode.BEST) {
+            addProvider(order, requestedProvider);
+            return order;
+        }
+        if (hasImageAttachment) {
+            addProvider(order, ProviderType.GOOGLE_AI_STUDIO);
+            addProvider(order, ProviderType.GROQ);
+            return order;
+        }
         if (isImageGenerationPrompt(latestUserText)) {
+            addProvider(order, ProviderType.FREEPIK);
             addProvider(order, ProviderType.LEONARDO);
             addProvider(order, ProviderType.GROQ);
             addProvider(order, ProviderType.GOOGLE_AI_STUDIO);
@@ -690,6 +949,10 @@ public class ChatService {
             case LEONARDO -> {
                 addProvider(order, ProviderType.GROQ);
                 addProvider(order, ProviderType.GOOGLE_AI_STUDIO);
+            }
+            case FREEPIK -> {
+                addProvider(order, ProviderType.LEONARDO);
+                addProvider(order, ProviderType.GROQ);
             }
         }
         return order;
@@ -824,7 +1087,7 @@ public class ChatService {
 
     private String buildMissingApiKeyMessage(AppPropertiesSource source, List<String> missingProviders) {
         String providers = (missingProviders == null || missingProviders.isEmpty())
-                ? "Groq / Google AI Studio / Leonardo"
+                ? "Groq / Google AI Studio / Leonardo / Freepik"
                 : String.join(", ", missingProviders);
 
         if (source == AppPropertiesSource.RESOURCE_FALLBACK) {
@@ -840,6 +1103,7 @@ public class ChatService {
                     past_api_2=YOUR_GROQ_KEY_2
                     google_ai_studio_api_1=YOUR_GOOGLE_KEY_1
                     leonardo_api_1=YOUR_LEONARDO_KEY_1
+                    freepik_api_1=YOUR_FREEPIK_KEY_1
                     ```
                     """).formatted(providers);
         }
@@ -854,6 +1118,7 @@ public class ChatService {
                 past_api_2=YOUR_GROQ_KEY_2
                 google_ai_studio_api_1=YOUR_GOOGLE_KEY_1
                 leonardo_api_1=YOUR_LEONARDO_KEY_1
+                freepik_api_1=YOUR_FREEPIK_KEY_1
                 ```
                 """).formatted(providers);
     }
@@ -945,6 +1210,21 @@ public class ChatService {
     private String extractLeonardoGenerationId(String json) {
         int idIndex = json.indexOf("\"generationId\"");
         return extractJsonStringValueAtKey(json, idIndex);
+    }
+
+    private String extractFreepikTaskId(String json) {
+        int idIndex = json.indexOf("\"task_id\"");
+        return extractJsonStringValueAtKey(json, idIndex);
+    }
+
+    private String extractFirstGeneratedAsset(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        int generatedIndex = json.indexOf("\"generated\"");
+        String candidate = generatedIndex >= 0 ? json.substring(generatedIndex) : json;
+        Matcher matcher = HTTP_URL_PATTERN.matcher(candidate);
+        return matcher.find() ? matcher.group() : null;
     }
 
     private String extractFirstUrl(String json) {
@@ -1080,13 +1360,15 @@ public class ChatService {
             case GROQ -> "Groq";
             case GOOGLE_AI_STUDIO -> "Google AI Studio";
             case LEONARDO -> "Leonardo";
+            case FREEPIK -> "Freepik";
         };
     }
 
     private enum ProviderType {
         GROQ,
         GOOGLE_AI_STUDIO,
-        LEONARDO
+        LEONARDO,
+        FREEPIK
     }
 
     private record ProviderConfig(ProviderType providerType,
