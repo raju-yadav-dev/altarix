@@ -1,92 +1,48 @@
-name: Build Cortex Installers
+name: Build Installers
 
 on:
-push:
-tags:
-- "v*"
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
 
 jobs:
 
-build-windows:
-runs-on: windows-latest
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
 
-```
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+    runs-on: ${{ matrix.os }}
 
-  - name: Setup Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: 21
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
 
-  - name: Grant Gradle permission
-    run: chmod +x gradlew
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
 
-  - name: Build project
-    run: ./gradlew build
+      - name: Grant Gradle Permission
+        if: runner.os != 'Windows'
+        run: chmod +x gradlew
 
-  - name: Package installer
-    run: ./gradlew jpackage
+      - name: Build Project
+        run: ./gradlew build
 
-  - name: Upload Windows installer
-    uses: actions/upload-artifact@v4
-    with:
-      name: cortex-windows
-      path: build/jpackage/*
-```
+      - name: Package App
+        run: |
+          jpackage \
+          --input build/libs \
+          --main-jar cortex.jar \
+          --name Cortex \
+          --dest dist \
+          --type app-image
 
-build-linux:
-runs-on: ubuntu-latest
-
-```
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
-
-  - name: Setup Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: 21
-
-  - name: Build project
-    run: ./gradlew build
-
-  - name: Package Linux installers
-    run: ./gradlew jpackage
-
-  - name: Upload Linux installers
-    uses: actions/upload-artifact@v4
-    with:
-      name: cortex-linux
-      path: build/jpackage/*
-```
-
-build-macos:
-runs-on: macos-latest
-
-```
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
-
-  - name: Setup Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: 21
-
-  - name: Build project
-    run: ./gradlew build
-
-  - name: Package macOS installer
-    run: ./gradlew jpackage
-
-  - name: Upload macOS installer
-    uses: actions/upload-artifact@v4
-    with:
-      name: cortex-macos
-      path: build/jpackage/*
-```
+      - name: Upload Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-${{ runner.os }}
+          path: dist/
