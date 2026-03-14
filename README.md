@@ -1,6 +1,6 @@
 # Cortex Desktop Application (JavaFX)
 
-Cortex is a JavaFX desktop AI assistant built with Java 17 and Gradle. It supports multi-conversation chat, markdown rendering, inline "ask about selection" threads, code execution, terminal tooling, theming, settings, and export options.
+Cortex is a JavaFX desktop AI assistant built with Java 25 and Gradle. It supports multi-conversation chat, markdown rendering, inline "ask about selection" threads, code execution, terminal tooling, theming, settings, and export options.
 
 ## Current Status
 
@@ -18,9 +18,10 @@ Implemented:
 
 ## Requirements
 
-- Java 17+
+- Java 17+ JDK
 - Gradle wrapper (already included)
 - Valid API credentials for your provider
+- WiX Toolset installed on Windows if you want native `.exe` and `.msi` installers
 
 ## Configuration (Important)
 
@@ -59,7 +60,7 @@ Notes:
 
 ## Run and Build
 
-From `ai-project`:
+From `cortex`:
 
 Run app:
 
@@ -67,17 +68,31 @@ Run app:
 .\gradlew.bat run
 ```
 
-Build JAR:
+Build the project:
 
 ```powershell
-.\gradlew.bat clean jar
+.\gradlew.bat clean build
 ```
 
-Run JAR:
+Build a Windows `.exe` installer:
 
 ```powershell
-java -jar build\libs\Cortex.jar
+.\gradlew.bat packageExe
 ```
+
+Build a Windows `.msi` installer:
+
+```powershell
+.\gradlew.bat packageMsi
+```
+
+Build both installers:
+
+```powershell
+.\gradlew.bat packageInstallers
+```
+
+The generated installers are written to `build\installers`.
 
 ## Code Execution Languages
 

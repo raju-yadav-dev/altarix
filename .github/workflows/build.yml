@@ -3,132 +3,130 @@ name: Build Cortex Installers
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-
   build:
-
-    strategy:
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-
+    name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: cortex-windows
+            javafx_platform: win
+          - os: ubuntu-latest
+            artifact_name: cortex-linux
+            javafx_platform: linux
+          - os: macos-latest
+            artifact_name: cortex-macos
+            javafx_platform: mac
+
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - uses: actions/checkout@v4
-
-
-      - uses: actions/setup-java@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-
-      - name: Install Linux tools
+      - name: Install Linux packaging tools
         if: runner.os == 'Linux'
+        shell: bash
         run: |
-          sudo apt update
-          sudo apt install -y rpm fakeroot
+          sudo apt-get update
+          sudo apt-get install -y fakeroot rpm
 
-
-      - name: Grant Gradle permission
+      - name: Make Gradle wrapper executable
         if: runner.os != 'Windows'
-        run: chmod +x gradlew
+        shell: bash
+        run: chmod +x ./gradlew
 
+      - name: Build platform-specific JAR
+        shell: pwsh
+        run: |
+          if ("${{ runner.os }}" -eq "Windows") {
+            .\gradlew.bat --no-daemon clean jar "-PjavafxPlatform=${{ matrix.javafx_platform }}"
+          } else {
+            ./gradlew --no-daemon clean jar "-PjavafxPlatform=${{ matrix.javafx_platform }}"
+          }
 
-      - name: Build JAR
-        run: ./gradlew clean build
-
-
-      - name: Find JAR
+      - name: Resolve JAR name
         id: jar
-        shell: bash
+        shell: pwsh
         run: |
-          JAR=$(ls build/libs/*.jar | head -n 1)
-          echo "jar=$JAR" >> $GITHUB_OUTPUT
+          $jar = Get-ChildItem "build/libs/*.jar" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $jar) {
+            throw "No JAR was generated in build/libs"
+          }
+          "jar_name=$($jar.Name)" >> $env:GITHUB_OUTPUT
 
-
-# ---------------- WINDOWS ----------------
-
-      - name: Build Windows installers
-        if: runner.os == 'Windows'
-        shell: bash
+      - name: Build native packages
+        shell: pwsh
         run: |
-          mkdir dist
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
 
-          jpackage \
-            --name Cortex \
-            --input build/libs \
-            --main-jar $(basename ${{ steps.jar.outputs.jar }}) \
-            --type exe \
-            --dest dist \
-            --win-shortcut \
-            --win-menu \
-            --win-menu-group Cortex
+          $commonArgs = @(
+            '--name', 'Cortex',
+            '--input', 'build/libs',
+            '--main-jar', '${{ steps.jar.outputs.jar_name }}',
+            '--main-class', 'com.example.chatbot.CortexLauncher',
+            '--app-version', '1.2.1',
+            '--vendor', 'Cortex AI',
+            '--dest', 'dist'
+          )
 
-          jpackage \
-            --name Cortex \
-            --input build/libs \
-            --main-jar $(basename ${{ steps.jar.outputs.jar }}) \
-            --type msi \
-            --dest dist \
-            --win-shortcut \
-            --win-menu \
-            --win-menu-group Cortex
+          function Invoke-JPackage([string[]] $Args) {
+            & jpackage @Args
+            if ($LASTEXITCODE -ne 0) {
+              throw "jpackage failed with exit code $LASTEXITCODE"
+            }
+          }
 
+          switch ("${{ runner.os }}") {
+            'Windows' {
+              foreach ($type in @('exe', 'msi')) {
+                $args = $commonArgs + @(
+                  '--type', $type,
+                  '--icon', 'src/main/resources/icon/Cortex.ico',
+                  '--win-shortcut',
+                  '--win-menu',
+                  '--win-menu-group', 'Cortex'
+                )
+                Invoke-JPackage $args
+              }
+            }
+            'Linux' {
+              foreach ($type in @('deb', 'rpm')) {
+                $args = $commonArgs + @(
+                  '--type', $type,
+                  '--icon', 'src/main/resources/icon/Cortex.png',
+                  '--linux-shortcut'
+                )
+                Invoke-JPackage $args
+              }
+            }
+            'macOS' {
+              foreach ($type in @('dmg', 'pkg')) {
+                $args = $commonArgs + @(
+                  '--type', $type
+                )
+                Invoke-JPackage $args
+              }
+            }
+            default {
+              throw "Unsupported runner OS: ${{ runner.os }}"
+            }
+          }
 
-# ---------------- LINUX ----------------
-
-      - name: Build Linux installers
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          mkdir dist
-
-          jpackage \
-            --name cortex \
-            --input build/libs \
-            --main-jar $(basename ${{ steps.jar.outputs.jar }}) \
-            --type deb \
-            --dest dist \
-            --linux-shortcut
-
-          jpackage \
-            --name cortex \
-            --input build/libs \
-            --main-jar $(basename ${{ steps.jar.outputs.jar }}) \
-            --type rpm \
-            --dest dist \
-            --linux-shortcut
-
-
-# ---------------- MAC ----------------
-
-      - name: Build macOS installers
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          mkdir dist
-
-          jpackage \
-            --name Cortex \
-            --input build/libs \
-            --main-jar $(basename ${{ steps.jar.outputs.jar }}) \
-            --type dmg \
-            --dest dist
-
-          jpackage \
-            --name Cortex \
-            --input build/libs \
-            --main-jar $(basename ${{ steps.jar.outputs.jar }}) \
-            --type pkg \
-            --dest dist
-
-
-# ---------------- UPLOAD ----------------
-
-      - name: Upload installers
+      - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cortex-${{ runner.os }}
+          name: ${{ matrix.artifact_name }}
           path: dist/*
+          if-no-files-found: error

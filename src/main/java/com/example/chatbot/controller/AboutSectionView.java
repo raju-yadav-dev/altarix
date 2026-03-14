@@ -18,7 +18,7 @@ public final class AboutSectionView {
         Label appName = new Label("Cortex");
         appName.getStyleClass().add("about-app-name");
 
-        Label versionLabel = new Label("Version: 1.3.1");
+        Label versionLabel = new Label("Version: 1.5.0");
         versionLabel.getStyleClass().add("about-version");
 
         Button updateButton = new Button("Check for Updates");

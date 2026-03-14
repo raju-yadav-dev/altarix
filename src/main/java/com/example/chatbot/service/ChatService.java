@@ -2,6 +2,7 @@ package com.example.chatbot.service;
 
 import com.example.chatbot.model.Conversation;
 import com.example.chatbot.model.Message;
+import java.util.Map;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -46,12 +47,15 @@ public class ChatService {
     private static final String DEFAULT_LEONARDO_MODEL_ID = "phoenix";
     private static final String DEFAULT_FREEPIK_BASE_URL = "https://api.freepik.com/v1/ai";
     private static final String DEFAULT_FREEPIK_MODEL = "z-image";
+    private static final String DEFAULT_FREEPIK_VIDEO_MODEL = "kling-v3-omni-std";
     private static final String APP_PROPERTIES_FILE = "app.properties";
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(90);
     private static final int LEONARDO_POLL_ATTEMPTS = 8;
     private static final long LEONARDO_POLL_DELAY_MS = 1100;
     private static final int FREEPIK_POLL_ATTEMPTS = 12;
     private static final long FREEPIK_POLL_DELAY_MS = 1200;
+    private static final int FREEPIK_VIDEO_POLL_ATTEMPTS = 40;
+    private static final long FREEPIK_VIDEO_POLL_DELAY_MS = 2000;
     private static final Pattern HTTP_URL_PATTERN = Pattern.compile("https?://[^\"\\\\\\s]+");
 
     private static final Set<String> STOP_WORDS = new HashSet<>(Arrays.asList(
@@ -197,12 +201,15 @@ public class ChatService {
         LoadedProperties loaded = loadAppProperties();
         String latestUserText = extractLatestUserMessage(historySnapshot);
         boolean hasImageAttachment = imageAttachment != null && imageAttachment.hasData();
-        ProviderType requestedProvider = resolveRequestedProvider(latestUserText, hasImageAttachment, requestMode);
+        PromptIntent promptIntent = classifyPromptIntent(latestUserText, hasImageAttachment);
+        ProviderType requestedProvider = resolveRequestedProvider(latestUserText, promptIntent, hasImageAttachment, requestMode);
         List<ProviderType> attemptOrder = buildProviderAttemptOrder(
                 requestedProvider,
+                promptIntent,
                 latestUserText,
                 hasImageAttachment,
-                requestMode
+                requestMode,
+                loaded
         );
 
         List<String> missingProviders = new ArrayList<>();
@@ -215,7 +222,13 @@ public class ChatService {
                 continue;
             }
 
-            ProviderAttemptResult result = requestWithProviderFailover(config, historySnapshot, latestUserText, imageAttachment);
+            ProviderAttemptResult result = requestWithProviderFailover(
+                    config,
+                    historySnapshot,
+                    latestUserText,
+                    imageAttachment,
+                    promptIntent
+            );
             if (result.success()) {
                 return new Message(Message.Sender.BOT, result.content());
             }
@@ -223,6 +236,9 @@ public class ChatService {
         }
 
         if (!missingProviders.isEmpty() && lastError == null) {
+            if (promptIntent == PromptIntent.VIDEO_GENERATION) {
+                return new Message(Message.Sender.BOT, buildMissingVideoProviderMessage(loaded.source(), missingProviders));
+            }
             return new Message(Message.Sender.BOT, buildMissingApiKeyMessage(loaded.source(), missingProviders));
         }
 
@@ -233,14 +249,15 @@ public class ChatService {
     private ProviderAttemptResult requestWithProviderFailover(ProviderConfig config,
                                                               List<Message> historySnapshot,
                                                               String latestUserText,
-                                                              ImageAttachment imageAttachment) {
+                                                              ImageAttachment imageAttachment,
+                                                              PromptIntent promptIntent) {
         String lastError = null;
         for (String apiKey : config.apiKeys()) {
             ProviderCallResult callResult = switch (config.providerType()) {
                 case GROQ -> callGroqChat(config, apiKey, historySnapshot);
                 case GOOGLE_AI_STUDIO -> callGoogleChat(config, apiKey, historySnapshot, imageAttachment);
-                case LEONARDO -> callLeonardoImage(config, apiKey, latestUserText);
-                case FREEPIK -> callFreepikImage(config, apiKey, latestUserText);
+                case LEONARDO -> callLeonardoImage(config, apiKey, latestUserText, promptIntent);
+                case FREEPIK -> callFreepik(config, apiKey, latestUserText, promptIntent);
             };
 
             if (callResult.success()) {
@@ -324,9 +341,18 @@ public class ChatService {
         }
     }
 
-    private ProviderCallResult callLeonardoImage(ProviderConfig config, String apiKey, String latestUserText) {
+    private ProviderCallResult callLeonardoImage(ProviderConfig config,
+                                                 String apiKey,
+                                                 String latestUserText,
+                                                 PromptIntent promptIntent) {
         try {
-            if (!isImageGenerationPrompt(latestUserText)) {
+            if (promptIntent == PromptIntent.VIDEO_GENERATION) {
+                return ProviderCallResult.failure(
+                        "Leonardo is configured here for image generation only. Video generation is currently routed through Freepik.",
+                        false
+                );
+            }
+            if (promptIntent != PromptIntent.IMAGE_GENERATION) {
                 return ProviderCallResult.failure(
                         "Leonardo is dedicated to image generation. Ask to generate an image, logo, art, or illustration.",
                         false
@@ -404,6 +430,20 @@ public class ChatService {
         return "Generating image...";
     }
 
+    private ProviderCallResult callFreepik(ProviderConfig config,
+                                           String apiKey,
+                                           String latestUserText,
+                                           PromptIntent promptIntent) {
+        return switch (promptIntent) {
+            case VIDEO_GENERATION -> callFreepikVideo(config, apiKey, latestUserText);
+            case IMAGE_GENERATION -> callFreepikImage(config, apiKey, latestUserText);
+            default -> ProviderCallResult.failure(
+                    "Freepik is used here for image or video generation. Ask to generate an image or a video.",
+                    false
+            );
+        };
+    }
+
     private ProviderCallResult callFreepikImage(ProviderConfig config, String apiKey, String latestUserText) {
         try {
             if (!isImageGenerationPrompt(latestUserText)) {
@@ -413,7 +453,7 @@ public class ChatService {
                 );
             }
 
-            String modelSlug = normalizeFreepikModel(config.modelName());
+            String modelSlug = resolveFreepikImageModel(config.modelName());
             String endpoint = buildFreepikImageEndpoint(config.baseUrl(), modelSlug);
             String body = buildFreepikGenerationRequestJson(latestUserText);
             HttpRequest request = HttpRequest.newBuilder()
@@ -440,6 +480,49 @@ public class ChatService {
             }
 
             String content = buildFreepikResponseContent(imageUrl, taskId, modelSlug);
+            return ProviderCallResult.success(content);
+        } catch (Throwable ex) {
+            String message = providerDisplayName(config.providerType()) + " request failed: " + ex.getMessage();
+            return ProviderCallResult.failure(message, true);
+        }
+    }
+
+    private ProviderCallResult callFreepikVideo(ProviderConfig config, String apiKey, String latestUserText) {
+        try {
+            if (!isVideoGenerationPrompt(latestUserText)) {
+                return ProviderCallResult.failure(
+                        "Freepik video mode is for motion generation. Ask to generate a video, clip, animation, or cinematic shot.",
+                        false
+                );
+            }
+
+            String modelSlug = resolveFreepikVideoModel(config.modelName());
+            String endpoint = buildFreepikVideoEndpoint(config.baseUrl(), modelSlug);
+            String body = buildFreepikVideoGenerationRequestJson(latestUserText);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint))
+                    .header("x-freepik-api-key", apiKey)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .timeout(REQUEST_TIMEOUT)
+                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                String error = extractErrorMessage(response.body());
+                String details = providerDisplayName(config.providerType()) + " API HTTP "
+                        + response.statusCode() + " - " + error;
+                return ProviderCallResult.failure(details, shouldRetryWithNextKey(response.statusCode()));
+            }
+
+            String videoUrl = extractFirstGeneratedAsset(response.body());
+            String taskId = extractFreepikTaskId(response.body());
+            if ((videoUrl == null || videoUrl.isBlank()) && taskId != null && !taskId.isBlank()) {
+                videoUrl = pollFreepikVideoUrl(config.baseUrl(), apiKey, modelSlug, taskId);
+            }
+
+            String content = buildFreepikVideoResponseContent(videoUrl, taskId, modelSlug);
             return ProviderCallResult.success(content);
         } catch (Throwable ex) {
             String message = providerDisplayName(config.providerType()) + " request failed: " + ex.getMessage();
@@ -477,19 +560,91 @@ public class ChatService {
         return null;
     }
 
-    private String buildFreepikImageEndpoint(String baseUrl, String modelSlug) {
-        return trimTrailingSlash(baseUrl) + "/text-to-image/" + normalizeFreepikModel(modelSlug);
+    private String pollFreepikVideoUrl(String baseUrl, String apiKey, String modelSlug, String taskId) {
+        String endpoint = buildFreepikVideoStatusEndpoint(baseUrl, modelSlug, taskId);
+        for (int i = 0; i < FREEPIK_VIDEO_POLL_ATTEMPTS; i++) {
+            try {
+                Thread.sleep(FREEPIK_VIDEO_POLL_DELAY_MS);
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(endpoint))
+                        .header("x-freepik-api-key", apiKey)
+                        .header("Accept", "application/json")
+                        .timeout(REQUEST_TIMEOUT)
+                        .GET()
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    String videoUrl = extractFirstGeneratedAsset(response.body());
+                    if (videoUrl != null && !videoUrl.isBlank()) {
+                        return videoUrl;
+                    }
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return null;
+            } catch (Throwable ignored) {
+                // Keep polling until attempts are exhausted.
+            }
+        }
+        return null;
     }
 
-    private String normalizeFreepikModel(String modelName) {
+    private String buildFreepikImageEndpoint(String baseUrl, String modelSlug) {
+        return trimTrailingSlash(baseUrl) + "/text-to-image/" + resolveFreepikImageModel(modelSlug);
+    }
+
+    private String buildFreepikVideoEndpoint(String baseUrl, String modelSlug) {
+        return trimTrailingSlash(baseUrl) + "/video/" + resolveFreepikVideoModel(modelSlug);
+    }
+
+    private String buildFreepikVideoStatusEndpoint(String baseUrl, String modelSlug, String taskId) {
+        return trimTrailingSlash(baseUrl)
+                + "/video/"
+                + resolveFreepikVideoStatusFamily(modelSlug)
+                + "/"
+                + urlEncode(taskId);
+    }
+
+    private String resolveFreepikImageModel(String modelName) {
         if (modelName == null || modelName.isBlank()) {
             return DEFAULT_FREEPIK_MODEL;
         }
         String normalized = modelName.trim();
-        if ("freepik-default".equalsIgnoreCase(normalized)) {
+        if ("freepik-default".equalsIgnoreCase(normalized) || isFreepikVideoModel(normalized)) {
             return DEFAULT_FREEPIK_MODEL;
         }
         return normalized;
+    }
+
+    private String resolveFreepikVideoModel(String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            return DEFAULT_FREEPIK_VIDEO_MODEL;
+        }
+        String normalized = modelName.trim();
+        if ("freepik-default".equalsIgnoreCase(normalized) || !isFreepikVideoModel(normalized)) {
+            return DEFAULT_FREEPIK_VIDEO_MODEL;
+        }
+        return normalized;
+    }
+
+    private String resolveFreepikVideoStatusFamily(String modelName) {
+        String normalized = resolveFreepikVideoModel(modelName);
+        if (normalized.endsWith("-std")) {
+            return normalized.substring(0, normalized.length() - 4);
+        }
+        if (normalized.endsWith("-pro")) {
+            return normalized.substring(0, normalized.length() - 4);
+        }
+        return normalized;
+    }
+
+    private boolean isFreepikVideoModel(String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            return false;
+        }
+        String normalized = modelName.trim().toLowerCase(Locale.ROOT);
+        return containsAny(normalized, "kling", "video", "wan", "veo", "hailuo");
     }
 
     private String buildFreepikGenerationRequestJson(String prompt) {
@@ -501,11 +656,53 @@ public class ChatService {
                 "}";
     }
 
+    private String buildFreepikVideoGenerationRequestJson(String prompt) {
+        String effectivePrompt = (prompt == null || prompt.isBlank())
+                ? "Create a short cinematic video"
+                : prompt.trim();
+        String aspectRatio = inferVideoAspectRatio(effectivePrompt);
+        int durationSeconds = inferVideoDurationSeconds(effectivePrompt);
+        return "{"
+                + "\"prompt\":\"" + jsonEscape(effectivePrompt) + "\","
+                + "\"duration\":" + durationSeconds + ","
+                + "\"aspect_ratio\":\"" + jsonEscape(aspectRatio) + "\""
+                + "}";
+    }
+
     private String buildFreepikResponseContent(String imageUrl, String taskId, String modelSlug) {
         if (imageUrl != null && !imageUrl.isBlank()) {
             return "![Generated image](" + imageUrl + ")";
         }
         return "Generating image...";
+    }
+
+    private String buildFreepikVideoResponseContent(String videoUrl, String taskId, String modelSlug) {
+        if (videoUrl != null && !videoUrl.isBlank()) {
+            return "Generated video using `" + modelSlug + "`:\n\n[Download video](" + videoUrl + ")";
+        }
+        if (taskId != null && !taskId.isBlank()) {
+            return "Generating video with `" + modelSlug + "`...\n\nTask ID: `" + taskId + "`";
+        }
+        return "Generating video...";
+    }
+
+    private String inferVideoAspectRatio(String prompt) {
+        String normalized = prompt == null ? "" : prompt.toLowerCase(Locale.ROOT);
+        if (containsAny(normalized, "portrait", "vertical", "reel", "story", "shorts", "tiktok")) {
+            return "9:16";
+        }
+        if (containsAny(normalized, "square", "instagram post")) {
+            return "1:1";
+        }
+        return "16:9";
+    }
+
+    private int inferVideoDurationSeconds(String prompt) {
+        String normalized = prompt == null ? "" : prompt.toLowerCase(Locale.ROOT);
+        if (containsAny(normalized, "10 second", "10-second", "longer video", "extended")) {
+            return 10;
+        }
+        return 5;
     }
 
     private String buildOpenAiChatRequestJson(List<Message> historySnapshot, String modelName) {
@@ -765,8 +962,12 @@ public class ChatService {
     }
 
     private ProviderConfig resolveGroqConfig(Properties props, AppPropertiesSource source) {
-        String configuredBaseUrl = settingIfCustomized("ai.baseUrl", "https://api.openai.com");
-        String configuredModelName = settingIfCustomized("ai.modelName", "gpt-4.1-mini");
+        AiProviderSetupSupport.ProviderSetup configuredSetup =
+                configuredSetupFor(AiProviderSetupSupport.PROVIDER_GROQ);
+        String configuredBaseUrl = configuredSetup == null ? settingIfCustomized("ai.baseUrl", "https://api.openai.com")
+                : configuredSetup.baseUrl();
+        String configuredModelName = configuredSetup == null ? settingIfCustomized("ai.modelName", "gpt-4.1-mini")
+                : configuredSetup.modelName();
 
         String baseUrl = firstNonBlank(
                 System.getenv("GROQ_BASE_URL"),
@@ -796,6 +997,9 @@ public class ChatService {
         readIndexedPropertyValues(props, "past_api_").forEach(value -> addIfPresent(keys, value));
         readIndexedPropertyValues(props, "groq_api_").forEach(value -> addIfPresent(keys, value));
         addIfPresent(keys, props.getProperty("past_api"));
+        if (configuredSetup != null) {
+            configuredSetup.apiKeys().forEach(value -> addIfPresent(keys, value));
+        }
         addIfPresent(keys, settingsManager.getString("ai.apiKey", ""));
         addCsvValues(keys, settingsManager.getString("ai.apiKeys", ""));
 
@@ -803,15 +1007,19 @@ public class ChatService {
     }
 
     private ProviderConfig resolveGoogleConfig(Properties props, AppPropertiesSource source) {
+        AiProviderSetupSupport.ProviderSetup configuredSetup =
+                configuredSetupFor(AiProviderSetupSupport.PROVIDER_GOOGLE);
         String baseUrl = firstNonBlank(
                 System.getenv("GOOGLE_BASE_URL"),
                 props.getProperty("google_base_url"),
+                configuredSetup == null ? null : configuredSetup.baseUrl(),
                 DEFAULT_GOOGLE_BASE_URL
         );
 
         String modelName = firstNonBlank(
                 System.getenv("GOOGLE_MODEL"),
                 props.getProperty("google_model"),
+                configuredSetup == null ? null : configuredSetup.modelName(),
                 DEFAULT_GOOGLE_MODEL
         );
 
@@ -821,20 +1029,27 @@ public class ChatService {
         addCsvValues(keys, props.getProperty("google_ai_studio_api_keys"));
         readIndexedPropertyValues(props, "google_ai_studio_api_").forEach(value -> addIfPresent(keys, value));
         addIfPresent(keys, props.getProperty("google_ai_studio_api"));
+        if (configuredSetup != null) {
+            configuredSetup.apiKeys().forEach(value -> addIfPresent(keys, value));
+        }
 
         return new ProviderConfig(ProviderType.GOOGLE_AI_STUDIO, baseUrl, modelName, List.copyOf(keys), source);
     }
 
     private ProviderConfig resolveLeonardoConfig(Properties props, AppPropertiesSource source) {
+        AiProviderSetupSupport.ProviderSetup configuredSetup =
+                configuredSetupFor(AiProviderSetupSupport.PROVIDER_LEONARDO);
         String baseUrl = firstNonBlank(
                 System.getenv("LEONARDO_BASE_URL"),
                 props.getProperty("leonardo_base_url"),
+                configuredSetup == null ? null : configuredSetup.baseUrl(),
                 DEFAULT_LEONARDO_BASE_URL
         );
 
         String modelName = firstNonBlank(
                 System.getenv("LEONARDO_MODEL_ID"),
                 props.getProperty("leonardo_model_id"),
+                configuredSetup == null ? null : configuredSetup.modelName(),
                 DEFAULT_LEONARDO_MODEL_ID
         );
 
@@ -844,22 +1059,29 @@ public class ChatService {
         addCsvValues(keys, props.getProperty("leonardo_api_keys"));
         readIndexedPropertyValues(props, "leonardo_api_").forEach(value -> addIfPresent(keys, value));
         addIfPresent(keys, props.getProperty("leonardo_api"));
+        if (configuredSetup != null) {
+            configuredSetup.apiKeys().forEach(value -> addIfPresent(keys, value));
+        }
 
         return new ProviderConfig(ProviderType.LEONARDO, baseUrl, modelName, List.copyOf(keys), source);
     }
 
     private ProviderConfig resolveFreepikConfig(Properties props, AppPropertiesSource source) {
+        AiProviderSetupSupport.ProviderSetup configuredSetup =
+                configuredSetupFor(AiProviderSetupSupport.PROVIDER_FREEPIK);
         String baseUrl = firstNonBlank(
                 System.getenv("FREEPIK_BASE_URL"),
                 props.getProperty("freepik_base_url"),
+                configuredSetup == null ? null : configuredSetup.baseUrl(),
                 DEFAULT_FREEPIK_BASE_URL
         );
 
-        String modelName = normalizeFreepikModel(firstNonBlank(
+        String modelName = firstNonBlank(
                 System.getenv("FREEPIK_MODEL"),
                 props.getProperty("freepik_model"),
+                configuredSetup == null ? null : configuredSetup.modelName(),
                 DEFAULT_FREEPIK_MODEL
-        ));
+        );
 
         LinkedHashSet<String> keys = new LinkedHashSet<>();
         addCsvValues(keys, System.getenv("FREEPIK_API_KEYS"));
@@ -867,11 +1089,15 @@ public class ChatService {
         addCsvValues(keys, props.getProperty("freepik_api_keys"));
         readIndexedPropertyValues(props, "freepik_api_").forEach(value -> addIfPresent(keys, value));
         addIfPresent(keys, props.getProperty("freepik_api"));
+        if (configuredSetup != null) {
+            configuredSetup.apiKeys().forEach(value -> addIfPresent(keys, value));
+        }
 
         return new ProviderConfig(ProviderType.FREEPIK, baseUrl, modelName, List.copyOf(keys), source);
     }
 
     private ProviderType resolveRequestedProvider(String latestUserText,
+                                                  PromptIntent promptIntent,
                                                   boolean hasImageAttachment,
                                                   RequestMode requestMode) {
         String normalized = latestUserText == null ? "" : latestUserText.toLowerCase(Locale.ROOT);
@@ -905,63 +1131,146 @@ public class ChatService {
         if (containsAny(normalized, "use groq", "groq api", "use llama", "llama 3", "llama-3")) {
             return ProviderType.GROQ;
         }
-        if (isImageGenerationPrompt(normalized)) {
-            return ProviderType.FREEPIK;
-        }
-        if (isImageUnderstandingPrompt(normalized)) {
-            return ProviderType.GOOGLE_AI_STUDIO;
-        }
-        return ProviderType.GROQ;
+        return switch (promptIntent) {
+            case IMAGE_UNDERSTANDING -> ProviderType.GOOGLE_AI_STUDIO;
+            case IMAGE_GENERATION -> preferredImageProvider(normalized);
+            case VIDEO_GENERATION -> ProviderType.FREEPIK;
+            case TEXT_CHAT -> ProviderType.GROQ;
+        };
     }
 
     private List<ProviderType> buildProviderAttemptOrder(ProviderType requestedProvider,
+                                                         PromptIntent promptIntent,
                                                          String latestUserText,
                                                          boolean hasImageAttachment,
-                                                         RequestMode requestMode) {
-        List<ProviderType> order = new ArrayList<>();
+                                                         RequestMode requestMode,
+                                                         LoadedProperties loaded) {
+        List<ProviderType> preferred = new ArrayList<>();
         RequestMode mode = requestMode == null ? RequestMode.BEST : requestMode;
 
         if (mode != RequestMode.BEST) {
-            addProvider(order, requestedProvider);
-            return order;
+            addProvider(preferred, requestedProvider);
+            return preferred;
         }
         if (hasImageAttachment) {
-            addProvider(order, ProviderType.GOOGLE_AI_STUDIO);
-            addProvider(order, ProviderType.GROQ);
-            return order;
-        }
-        if (isImageGenerationPrompt(latestUserText)) {
-            addProvider(order, ProviderType.FREEPIK);
-            addProvider(order, ProviderType.LEONARDO);
-            addProvider(order, ProviderType.GROQ);
-            addProvider(order, ProviderType.GOOGLE_AI_STUDIO);
-            return order;
+            addProvider(preferred, ProviderType.GOOGLE_AI_STUDIO);
+            return prioritizeConfiguredProviders(preferred, loaded);
         }
 
-        addProvider(order, requestedProvider);
-        switch (requestedProvider) {
-            case GROQ -> {
-                addProvider(order, ProviderType.GOOGLE_AI_STUDIO);
+        switch (promptIntent) {
+            case IMAGE_UNDERSTANDING -> {
+                addProviderIfCapable(preferred, requestedProvider, promptIntent);
+                addProvider(preferred, ProviderType.GOOGLE_AI_STUDIO);
             }
-            case GOOGLE_AI_STUDIO -> {
-                addProvider(order, ProviderType.GROQ);
+            case IMAGE_GENERATION -> {
+                ProviderType primaryImageProvider = preferredImageProvider(latestUserText);
+                addProviderIfCapable(preferred, requestedProvider, promptIntent);
+                addProvider(preferred, primaryImageProvider);
+                addProvider(preferred, primaryImageProvider == ProviderType.FREEPIK ? ProviderType.LEONARDO : ProviderType.FREEPIK);
             }
-            case LEONARDO -> {
-                addProvider(order, ProviderType.GROQ);
-                addProvider(order, ProviderType.GOOGLE_AI_STUDIO);
+            case VIDEO_GENERATION -> {
+                addProviderIfCapable(preferred, requestedProvider, promptIntent);
+                addProvider(preferred, ProviderType.FREEPIK);
             }
-            case FREEPIK -> {
-                addProvider(order, ProviderType.LEONARDO);
-                addProvider(order, ProviderType.GROQ);
+            case TEXT_CHAT -> {
+                addProviderIfCapable(preferred, requestedProvider, promptIntent);
+                addProvider(preferred, ProviderType.GROQ);
+                addProvider(preferred, ProviderType.GOOGLE_AI_STUDIO);
             }
         }
-        return order;
+        return prioritizeConfiguredProviders(preferred, loaded);
     }
 
     private void addProvider(List<ProviderType> order, ProviderType providerType) {
         if (!order.contains(providerType)) {
             order.add(providerType);
         }
+    }
+
+    private void addProviderIfCapable(List<ProviderType> order,
+                                      ProviderType providerType,
+                                      PromptIntent promptIntent) {
+        if (providerType != null && supportsIntent(providerType, promptIntent)) {
+            addProvider(order, providerType);
+        }
+    }
+
+    private List<ProviderType> prioritizeConfiguredProviders(List<ProviderType> preferred,
+                                                             LoadedProperties loaded) {
+        if (preferred == null || preferred.isEmpty() || loaded == null) {
+            return preferred == null ? List.of() : preferred;
+        }
+        List<ProviderType> configured = new ArrayList<>();
+        List<ProviderType> unavailable = new ArrayList<>();
+        // New: Use feedback scores to rank providers
+        Map<String, Integer> feedbackScores = settingsManager.getAllApiFeedbackScores();
+        preferred.stream()
+            .sorted((a, b) -> Integer.compare(
+                feedbackScores.getOrDefault(a.name(), 0),
+                feedbackScores.getOrDefault(b.name(), 0))
+            ).forEach(providerType -> {
+                ProviderConfig config = resolveProviderConfig(providerType, loaded);
+                if (config.apiKeys() != null && !config.apiKeys().isEmpty()) {
+                    configured.add(providerType);
+                } else {
+                    unavailable.add(providerType);
+                }
+            });
+        configured.addAll(unavailable);
+        return configured;
+    }
+
+    private boolean supportsIntent(ProviderType providerType, PromptIntent promptIntent) {
+        if (providerType == null || promptIntent == null) {
+            return false;
+        }
+        return switch (promptIntent) {
+            case TEXT_CHAT -> providerType == ProviderType.GROQ || providerType == ProviderType.GOOGLE_AI_STUDIO;
+            case IMAGE_UNDERSTANDING -> providerType == ProviderType.GOOGLE_AI_STUDIO;
+            case IMAGE_GENERATION -> providerType == ProviderType.FREEPIK || providerType == ProviderType.LEONARDO;
+            case VIDEO_GENERATION -> providerType == ProviderType.FREEPIK;
+        };
+    }
+
+    private PromptIntent classifyPromptIntent(String text, boolean hasImageAttachment) {
+        if (hasImageAttachment) {
+            return PromptIntent.IMAGE_UNDERSTANDING;
+        }
+        String normalized = text == null ? "" : text.toLowerCase(Locale.ROOT);
+        // New: Handle mixed requests and more nuanced prompts
+        if (isVideoGenerationPrompt(normalized)) {
+            return PromptIntent.VIDEO_GENERATION;
+        }
+        if (isImageGenerationPrompt(normalized)) {
+            return PromptIntent.IMAGE_GENERATION;
+        }
+        if (isImageUnderstandingPrompt(normalized)) {
+            return PromptIntent.IMAGE_UNDERSTANDING;
+        }
+        // New: If prompt contains both image and text keywords, prefer IMAGE_GENERATION
+        if (containsAny(normalized, "image", "photo", "picture") && containsAny(normalized, "explain", "describe", "text", "label")) {
+            return PromptIntent.IMAGE_GENERATION;
+        }
+        // New: If prompt contains video and text keywords, prefer VIDEO_GENERATION
+        if (containsAny(normalized, "video", "clip", "animation") && containsAny(normalized, "explain", "describe", "text", "label")) {
+            return PromptIntent.VIDEO_GENERATION;
+        }
+        return PromptIntent.TEXT_CHAT;
+    }
+
+    private ProviderType preferredImageProvider(String text) {
+        String normalized = text == null ? "" : text.toLowerCase(Locale.ROOT);
+        if (containsAny(normalized,
+                "logo", "icon", "poster", "banner", "flyer", "mockup", "product shot", "social media",
+                "advert", "ad creative", "branding", "packaging", "thumbnail")) {
+            return ProviderType.FREEPIK;
+        }
+        if (containsAny(normalized,
+                "cinematic", "fantasy", "character", "portrait", "concept art", "3d", "photorealistic",
+                "environment", "storyboard", "sci-fi", "anime")) {
+            return ProviderType.LEONARDO;
+        }
+        return ProviderType.FREEPIK;
     }
 
     private boolean isImageGenerationPrompt(String text) {
@@ -976,6 +1285,30 @@ public class ChatService {
         return containsAny(normalized,
                 "text to image", "image generation", "generate an image", "create an image", "make an image")
                 || (mentionsVisual && mentionsCreate);
+    }
+
+    private boolean isVideoGenerationPrompt(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String normalized = text.toLowerCase(Locale.ROOT);
+        if (containsAny(normalized, "video game", "game video settings") && !containsAny(normalized, "generate", "create", "make", "animate", "render")) {
+            return false;
+        }
+        boolean mentionsVideo = containsAny(normalized,
+                "video", "clip", "animation", "animated", "movie", "footage", "reel", "short film", "cinematic shot");
+        boolean mentionsCreate = containsAny(normalized,
+                "generate", "create", "make", "animate", "render", "produce", "convert", "turn");
+        return containsAny(normalized,
+                "text to video",
+                "video generation",
+                "generate a video",
+                "create a video",
+                "make a video",
+                "animate this",
+                "animate the image",
+                "image to video")
+                || (mentionsVideo && mentionsCreate);
     }
 
     private boolean isImageUnderstandingPrompt(String text) {
@@ -1015,6 +1348,11 @@ public class ChatService {
             }
         }
         return "";
+    }
+
+    private AiProviderSetupSupport.ProviderSetup configuredSetupFor(String providerId) {
+        List<AiProviderSetupSupport.ProviderSetup> setups = AiProviderSetupSupport.loadFromSettings(settingsManager);
+        return AiProviderSetupSupport.mergeForProvider(setups, providerId);
     }
 
     private String settingIfCustomized(String key, String defaultValue) {
@@ -1121,6 +1459,14 @@ public class ChatService {
                 freepik_api_1=YOUR_FREEPIK_KEY_1
                 ```
                 """).formatted(providers);
+    }
+
+    private String buildMissingVideoProviderMessage(AppPropertiesSource source, List<String> missingProviders) {
+        return """
+                Video generation in Cortex currently uses the Freepik integration.
+
+                %s
+                """.formatted(buildMissingApiKeyMessage(source, missingProviders));
     }
 
     private record LoadedProperties(Properties properties, AppPropertiesSource source) {
@@ -1362,6 +1708,13 @@ public class ChatService {
             case LEONARDO -> "Leonardo";
             case FREEPIK -> "Freepik";
         };
+    }
+
+    private enum PromptIntent {
+        TEXT_CHAT,
+        IMAGE_UNDERSTANDING,
+        IMAGE_GENERATION,
+        VIDEO_GENERATION
     }
 
     private enum ProviderType {

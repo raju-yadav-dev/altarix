@@ -243,18 +243,7 @@ public class MainLayout {
         }
     }
 
-    /**
-     * Toggles between dark and light themes.
-     * @deprecated Use switchTheme instead
-     */
-    private void toggleTheme() {
-        boolean lightMode = root.getStyleClass().contains(AppConfig.LIGHT_MODE_CLASS);
-        if (lightMode) {
-            root.getStyleClass().remove(AppConfig.LIGHT_MODE_CLASS);
-        } else {
-            root.getStyleClass().add(AppConfig.LIGHT_MODE_CLASS);
-        }
-    }
+    // ...existing code...
 
     // ========== UI UPDATES ==========
 

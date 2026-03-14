@@ -24,6 +24,8 @@ public final class SettingsManager {
     private static final SettingsManager INSTANCE = new SettingsManager();
 
     private final Map<String, Object> settings = new LinkedHashMap<>();
+    // New: Store user feedback for API ranking
+    private final Map<String, Integer> apiFeedbackScores = new ConcurrentHashMap<>();
     private final Map<String, Consumer<Object>> listeners = new ConcurrentHashMap<>();
     private Path configPath;
 
@@ -39,6 +41,8 @@ public final class SettingsManager {
 
     // ================= DEFAULTS =================
     private void populateDefaults() {
+            // New: Default feedback scores for providers
+            putDefault("ai.apiFeedbackScores", "");
         // Appearance
         putDefault("appearance.theme", "theme-dark-purple");
         putDefault("appearance.uiFontSize", 14);
@@ -88,6 +92,7 @@ public final class SettingsManager {
         putDefault("ai.apiKeys", "");
         putDefault("ai.baseUrl", "https://api.openai.com");
         putDefault("ai.modelName", "gpt-4.1-mini");
+        putDefault("ai.providerSetups", "");
         putDefault("ai.temperature", 0.4);
         putDefault("ai.maxTokens", 4096);
         putDefault("ai.systemPrompt", "");
@@ -134,6 +139,21 @@ public final class SettingsManager {
     }
 
     // ================= SETTERS =================
+        // New: Feedback system
+        public void addApiFeedback(String provider, int score) {
+            apiFeedbackScores.merge(provider, score, Integer::sum);
+            // Optionally persist feedback scores in settings
+            settings.put("ai.apiFeedbackScores", apiFeedbackScores.toString());
+            save();
+        }
+
+        public int getApiFeedbackScore(String provider) {
+            return apiFeedbackScores.getOrDefault(provider, 0);
+        }
+
+        public Map<String, Integer> getAllApiFeedbackScores() {
+            return new LinkedHashMap<>(apiFeedbackScores);
+        }
     public void set(String key, Object value) {
         Object previous = settings.put(key, value);
         if (!java.util.Objects.equals(previous, value)) {

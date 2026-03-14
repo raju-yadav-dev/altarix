@@ -2460,6 +2460,21 @@
     -fx-spacing: 14;
 }
 
+.settings-provider-card {
+    -fx-background-color: rgba(255,255,255,0.03);
+    -fx-border-color: -app-border;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 14 16;
+    -fx-spacing: 10;
+}
+
+.settings-card-title {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
 .settings-page-title {
     -fx-text-fill: -app-text-primary;
     -fx-font-size: 18px;

@@ -1,5 +1,6 @@
 package com.example.chatbot.controller;
 
+import com.example.chatbot.service.AiProviderSetupSupport;
 import com.example.chatbot.service.SettingsManager;
 import javafx.application.HostServices;
 import javafx.collections.FXCollections;
@@ -267,24 +268,14 @@ public class SettingsDialogController {
     private VBox buildAIPage() {
         VBox page = createPage("AI Model");
 
-        page.getChildren().add(createMultiSecretFieldRow(
-            "API keys",
-            "ai.apiKeys",
-            "ai.apiKey",
-            "Add one or more API keys. Use + to add more keys."
-        ));
-        page.getChildren().add(createTextFieldRow(
-            "Base URL",
-            "ai.baseUrl",
-            settings.getString("ai.baseUrl", "https://api.openai.com"),
-            "https://api.openai.com"
-        ));
-        page.getChildren().add(createTextFieldRow(
-            "Model name",
-            "ai.modelName",
-            settings.getString("ai.modelName", "gpt-4.1-mini"),
-            "gpt-4.1-mini"
-        ));
+        Label setupsHint = new Label(
+                "Add one or more provider setups. Each setup can have its own API keys, base URL, and model name. " +
+                "When Input mode default is Best, Cortex automatically uses the most suitable configured provider."
+        );
+        setupsHint.setWrapText(true);
+        setupsHint.getStyleClass().add("settings-hint");
+        page.getChildren().add(setupsHint);
+        page.getChildren().add(createProviderSetupsSection());
         page.getChildren().add(createComboRow(
                 "Input mode default",
                 "chat.inputModeDefault",
@@ -328,6 +319,222 @@ public class SettingsDialogController {
         page.getChildren().add(promptBox);
 
         return page;
+    }
+
+    private VBox createProviderSetupsSection() {
+        VBox wrapper = new VBox(10);
+        VBox setupsContainer = new VBox(12);
+        setupsContainer.setFillWidth(true);
+
+        List<AiProviderSetupSupport.ProviderSetup> setups = AiProviderSetupSupport.loadFromSettings(settings);
+        if (setups.isEmpty()) {
+            setups = List.of(AiProviderSetupSupport.defaultSetup());
+        }
+        for (AiProviderSetupSupport.ProviderSetup setup : setups) {
+            setupsContainer.getChildren().add(createProviderSetupCard(setup, setupsContainer));
+        }
+
+        Button addSetupButton = new Button("+ Add provider setup");
+        addSetupButton.setFocusTraversable(false);
+        addSetupButton.getStyleClass().add("settings-action-button");
+        addSetupButton.setOnAction(event ->
+                setupsContainer.getChildren().add(createProviderSetupCard(AiProviderSetupSupport.defaultSetup(), setupsContainer)));
+
+        wrapper.getChildren().addAll(setupsContainer, addSetupButton);
+        wrapper.setUserData(new SettingBinding(
+                AiProviderSetupSupport.SETTINGS_KEY,
+                () -> AiProviderSetupSupport.toJson(collectProviderSetups(setupsContainer))
+        ));
+        return wrapper;
+    }
+
+    private VBox createProviderSetupCard(AiProviderSetupSupport.ProviderSetup initialSetup, VBox owner) {
+        AiProviderSetupSupport.ProviderDefinition initialDefinition =
+                AiProviderSetupSupport.definitionForId(initialSetup.providerId());
+
+        VBox card = new VBox(10);
+        card.getStyleClass().add("settings-provider-card");
+
+        Label titleLabel = new Label(initialDefinition.displayName() + " setup");
+        titleLabel.getStyleClass().add("settings-card-title");
+
+        Button removeSetupButton = new Button("Remove");
+        removeSetupButton.setFocusTraversable(false);
+        removeSetupButton.getStyleClass().add("settings-browse-button");
+
+        HBox headerRow = new HBox(10);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        headerRow.getChildren().addAll(titleLabel, headerSpacer, removeSetupButton);
+
+        TextField providerField = new TextField(initialDefinition.displayName());
+        providerField.setPromptText(AiProviderSetupSupport.providerNamePrompt());
+        providerField.getStyleClass().add("settings-text-field");
+        HBox.setHgrow(providerField, Priority.ALWAYS);
+        providerField.getProperties().put("resolvedProviderId", initialDefinition.id());
+
+        HBox providerRow = createUnboundTextFieldRow("Provider name", providerField);
+
+        Label providerHint = new Label("Type a supported provider such as "
+                + AiProviderSetupSupport.providerNamePrompt() + ".");
+        providerHint.getStyleClass().add("settings-hint");
+        providerHint.setWrapText(true);
+
+        Label apiKeysLabel = new Label("API keys");
+        apiKeysLabel.getStyleClass().add("settings-label");
+
+        Label apiKeysHint = new Label("Add one or more keys for this provider.");
+        apiKeysHint.getStyleClass().add("settings-hint");
+        apiKeysHint.setWrapText(true);
+
+        VBox keysContainer = new VBox(6);
+        keysContainer.setFillWidth(true);
+        List<String> initialKeys = initialSetup.apiKeys().isEmpty() ? List.of("") : initialSetup.apiKeys();
+        for (String keyValue : initialKeys) {
+            keysContainer.getChildren().add(createApiKeyEditorRow(keyValue, keysContainer));
+        }
+
+        Button addKeyButton = new Button("+");
+        addKeyButton.setFocusTraversable(false);
+        addKeyButton.getStyleClass().add("settings-browse-button");
+        addKeyButton.setOnAction(event -> keysContainer.getChildren().add(createApiKeyEditorRow("", keysContainer)));
+
+        HBox addKeyRow = new HBox(addKeyButton);
+        addKeyRow.setAlignment(Pos.CENTER_LEFT);
+
+        TextField baseUrlField = new TextField(
+                initialSetup.baseUrl().isBlank() ? initialDefinition.defaultBaseUrl() : initialSetup.baseUrl()
+        );
+        baseUrlField.setPromptText(initialDefinition.defaultBaseUrl());
+        baseUrlField.getStyleClass().add("settings-text-field");
+        HBox.setHgrow(baseUrlField, Priority.ALWAYS);
+
+        HBox baseUrlRow = createUnboundTextFieldRow("Base URL", baseUrlField);
+
+        TextField modelNameField = new TextField(
+                initialSetup.modelName().isBlank() ? initialDefinition.defaultModelName() : initialSetup.modelName()
+        );
+        modelNameField.setPromptText(initialDefinition.defaultModelName());
+        modelNameField.getStyleClass().add("settings-text-field");
+        HBox.setHgrow(modelNameField, Priority.ALWAYS);
+
+        HBox modelRow = createUnboundTextFieldRow("Model name", modelNameField);
+
+        ProviderSetupEditor editor = new ProviderSetupEditor(card, providerField, keysContainer, baseUrlField, modelNameField);
+        card.getProperties().put("providerSetupEditor", editor);
+
+        final AiProviderSetupSupport.ProviderDefinition[] previousDefinition = {initialDefinition};
+        providerField.textProperty().addListener((obs, oldValue, newValue) -> {
+            AiProviderSetupSupport.ProviderDefinition nextDefinition =
+                    AiProviderSetupSupport.tryDefinitionForInput(newValue);
+            if (nextDefinition == null) {
+                titleLabel.setText("Provider setup");
+                return;
+            }
+            applyProviderDefaults(baseUrlField, modelNameField, previousDefinition[0], nextDefinition);
+            titleLabel.setText(nextDefinition.displayName() + " setup");
+            previousDefinition[0] = nextDefinition;
+            providerField.getProperties().put("resolvedProviderId", nextDefinition.id());
+        });
+        providerField.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            if (isFocused) {
+                return;
+            }
+            AiProviderSetupSupport.ProviderDefinition definition =
+                    AiProviderSetupSupport.tryDefinitionForInput(providerField.getText());
+            if (definition != null) {
+                providerField.setText(definition.displayName());
+            }
+        });
+
+        removeSetupButton.setOnAction(event -> {
+            owner.getChildren().remove(card);
+            if (owner.getChildren().isEmpty()) {
+                owner.getChildren().add(createProviderSetupCard(AiProviderSetupSupport.defaultSetup(), owner));
+            }
+        });
+
+        card.getChildren().addAll(
+                headerRow,
+                providerRow,
+                providerHint,
+                apiKeysLabel,
+                apiKeysHint,
+                keysContainer,
+                addKeyRow,
+                baseUrlRow,
+                modelRow
+        );
+        return card;
+    }
+
+    private HBox createUnboundTextFieldRow(String labelText, TextField field) {
+        HBox row = new HBox(12);
+        row.setAlignment(Pos.CENTER_LEFT);
+        Label label = new Label(labelText);
+        label.setMinWidth(200);
+        label.getStyleClass().add("settings-label");
+        row.getChildren().addAll(label, field);
+        return row;
+    }
+
+    private void applyProviderDefaults(TextField baseUrlField,
+                                       TextField modelNameField,
+                                       AiProviderSetupSupport.ProviderDefinition previous,
+                                       AiProviderSetupSupport.ProviderDefinition next) {
+        if (next == null) {
+            return;
+        }
+
+        if (shouldReplaceWithProviderDefault(baseUrlField.getText(), previous == null ? null : previous.defaultBaseUrl())) {
+            baseUrlField.setText(next.defaultBaseUrl());
+        }
+        if (shouldReplaceWithProviderDefault(modelNameField.getText(), previous == null ? null : previous.defaultModelName())) {
+            modelNameField.setText(next.defaultModelName());
+        }
+
+        baseUrlField.setPromptText(next.defaultBaseUrl());
+        modelNameField.setPromptText(next.defaultModelName());
+    }
+
+    private boolean shouldReplaceWithProviderDefault(String value, String previousDefault) {
+        String trimmed = value == null ? "" : value.trim();
+        return trimmed.isBlank() || (previousDefault != null && trimmed.equals(previousDefault));
+    }
+
+    private AiProviderSetupSupport.ProviderDefinition resolveProviderDefinition(TextField providerField) {
+        AiProviderSetupSupport.ProviderDefinition typedDefinition =
+                AiProviderSetupSupport.tryDefinitionForInput(providerField.getText());
+        if (typedDefinition != null) {
+            providerField.getProperties().put("resolvedProviderId", typedDefinition.id());
+            return typedDefinition;
+        }
+        Object resolvedProviderId = providerField.getProperties().get("resolvedProviderId");
+        if (resolvedProviderId instanceof String providerId && !providerId.isBlank()) {
+            return AiProviderSetupSupport.definitionForId(providerId);
+        }
+        return AiProviderSetupSupport.definitionForId(AiProviderSetupSupport.PROVIDER_GROQ);
+    }
+
+    private List<AiProviderSetupSupport.ProviderSetup> collectProviderSetups(VBox setupsContainer) {
+        List<AiProviderSetupSupport.ProviderSetup> setups = new ArrayList<>();
+        for (Node node : setupsContainer.getChildren()) {
+            Object editorObject = node.getProperties().get("providerSetupEditor");
+            if (!(editorObject instanceof ProviderSetupEditor editor)) {
+                continue;
+            }
+            AiProviderSetupSupport.ProviderDefinition definition =
+                    resolveProviderDefinition(editor.providerField());
+            List<String> apiKeys = parseCommaSeparated(collectApiKeys(editor.keysContainer()));
+            setups.add(new AiProviderSetupSupport.ProviderSetup(
+                    definition.id(),
+                    editor.baseUrlField().getText(),
+                    editor.modelNameField().getText(),
+                    apiKeys
+            ));
+        }
+        return setups;
     }
 
     private HBox createTextFieldRow(String label, String key, String current, String prompt) {
@@ -577,8 +784,7 @@ public class SettingsDialogController {
         for (VBox page : pages.values()) {
             collectBindings(page);
         }
-        List<String> configuredKeys = parseCommaSeparated(settings.getString("ai.apiKeys", ""));
-        settings.set("ai.apiKey", configuredKeys.isEmpty() ? "" : configuredKeys.get(0));
+        syncLegacyAiSettingsFromProviderSetups();
         persistAiConfigToResourceProperties();
         settings.save();
         if (onSave != null) {
@@ -635,22 +841,20 @@ public class SettingsDialogController {
             }
         }
 
-        properties.setProperty("past_api", settings.getString("ai.apiKey", "").trim());
-        properties.setProperty("openai_base_url", settings.getString("ai.baseUrl", "https://api.openai.com").trim());
-        properties.setProperty("openai_model", settings.getString("ai.modelName", "gpt-4.1-mini").trim());
-        List<String> apiKeys = parseCommaSeparated(settings.getString("ai.apiKeys", ""));
-        if (apiKeys.isEmpty()) {
-            String singleKey = settings.getString("ai.apiKey", "").trim();
-            if (!singleKey.isEmpty()) {
-                apiKeys.add(singleKey);
-            }
-        }
+        List<AiProviderSetupSupport.ProviderSetup> setups = AiProviderSetupSupport.loadFromSettings(settings);
+        writeProviderProperties(properties, setups, AiProviderSetupSupport.PROVIDER_GROQ);
+        writeProviderProperties(properties, setups, AiProviderSetupSupport.PROVIDER_GOOGLE);
+        writeProviderProperties(properties, setups, AiProviderSetupSupport.PROVIDER_LEONARDO);
+        writeProviderProperties(properties, setups, AiProviderSetupSupport.PROVIDER_FREEPIK);
+
+        AiProviderSetupSupport.ProviderSetup groqSetup =
+                AiProviderSetupSupport.mergeForProvider(setups, AiProviderSetupSupport.PROVIDER_GROQ);
+        clearExactKeys(properties, "past_api", "past_api_keys", "openai_base_url", "openai_model");
         clearIndexedKeys(properties, "past_api_");
-        if (!apiKeys.isEmpty()) {
-            properties.setProperty("past_api", apiKeys.get(0));
-            for (int i = 0; i < apiKeys.size(); i++) {
-                properties.setProperty("past_api_" + (i + 1), apiKeys.get(i));
-            }
+        if (groqSetup != null) {
+            writePropertyIfPresent(properties, "openai_base_url", groqSetup.baseUrl());
+            writePropertyIfPresent(properties, "openai_model", groqSetup.modelName());
+            writeApiKeyProperties(properties, "past_api", "past_api_keys", "past_api_", groqSetup.apiKeys());
         }
 
         try {
@@ -660,6 +864,91 @@ public class SettingsDialogController {
             }
         } catch (IOException ignored) {
             // Avoid blocking Save if resource file write fails.
+        }
+    }
+
+    private void syncLegacyAiSettingsFromProviderSetups() {
+        List<AiProviderSetupSupport.ProviderSetup> setups = AiProviderSetupSupport.loadFromSettings(settings);
+        AiProviderSetupSupport.ProviderSetup groqSetup =
+                AiProviderSetupSupport.mergeForProvider(setups, AiProviderSetupSupport.PROVIDER_GROQ);
+        AiProviderSetupSupport.ProviderSetup primarySetup = groqSetup;
+        if (primarySetup == null && !setups.isEmpty()) {
+            primarySetup = setups.get(0);
+        }
+        if (primarySetup == null) {
+            primarySetup = AiProviderSetupSupport.defaultSetup();
+        }
+
+        List<String> primaryKeys = groqSetup == null ? List.of() : groqSetup.apiKeys();
+        settings.set("ai.apiKeys", String.join(",", primaryKeys));
+        settings.set("ai.apiKey", primaryKeys.isEmpty() ? "" : primaryKeys.get(0));
+        settings.set("ai.baseUrl", primarySetup.baseUrl());
+        settings.set("ai.modelName", primarySetup.modelName());
+    }
+
+    private void writeProviderProperties(Properties properties,
+                                         List<AiProviderSetupSupport.ProviderSetup> setups,
+                                         String providerId) {
+        AiProviderSetupSupport.ProviderDefinition definition = AiProviderSetupSupport.definitionForId(providerId);
+        AiProviderSetupSupport.ProviderSetup mergedSetup = AiProviderSetupSupport.mergeForProvider(setups, providerId);
+
+        clearExactKeys(
+                properties,
+                definition.baseUrlProperty(),
+                definition.modelProperty(),
+                definition.singleApiProperty(),
+                definition.csvApiProperty()
+        );
+        clearIndexedKeys(properties, definition.indexedApiPrefix());
+
+        if (mergedSetup == null) {
+            return;
+        }
+
+        writePropertyIfPresent(properties, definition.baseUrlProperty(), mergedSetup.baseUrl());
+        writePropertyIfPresent(properties, definition.modelProperty(), mergedSetup.modelName());
+        writeApiKeyProperties(
+                properties,
+                definition.singleApiProperty(),
+                definition.csvApiProperty(),
+                definition.indexedApiPrefix(),
+                mergedSetup.apiKeys()
+        );
+    }
+
+    private void writeApiKeyProperties(Properties properties,
+                                       String singleKeyProperty,
+                                       String csvKeyProperty,
+                                       String indexedPrefix,
+                                       List<String> apiKeys) {
+        clearExactKeys(properties, singleKeyProperty, csvKeyProperty);
+        clearIndexedKeys(properties, indexedPrefix);
+        if (apiKeys == null || apiKeys.isEmpty()) {
+            return;
+        }
+        properties.setProperty(singleKeyProperty, apiKeys.get(0));
+        properties.setProperty(csvKeyProperty, String.join(",", apiKeys));
+        for (int i = 0; i < apiKeys.size(); i++) {
+            properties.setProperty(indexedPrefix + (i + 1), apiKeys.get(i));
+        }
+    }
+
+    private void writePropertyIfPresent(Properties properties, String key, String value) {
+        if (value == null || value.isBlank()) {
+            properties.remove(key);
+            return;
+        }
+        properties.setProperty(key, value.trim());
+    }
+
+    private void clearExactKeys(Properties properties, String... keys) {
+        if (keys == null) {
+            return;
+        }
+        for (String key : keys) {
+            if (key != null && !key.isBlank()) {
+                properties.remove(key);
+            }
         }
     }
 
@@ -718,6 +1007,12 @@ public class SettingsDialogController {
 
     // ================= BINDING RECORD =================
     private record SettingBinding(String key, java.util.function.Supplier<Object> valueGetter) {}
+
+    private record ProviderSetupEditor(VBox root,
+                                       TextField providerField,
+                                       VBox keysContainer,
+                                       TextField baseUrlField,
+                                       TextField modelNameField) {}
 
     public record BlurPreviewState(boolean enabled, double radius) {}
 

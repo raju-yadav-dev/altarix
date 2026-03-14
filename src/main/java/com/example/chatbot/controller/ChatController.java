@@ -254,7 +254,11 @@ public class ChatController {
                 settingsManager.save();
             });
             Tooltip.install(modelModeSelector, new Tooltip(
-                    "Best: auto select provider (image generation uses Freepik)\nGroq: text chat\nGoogle Vision: read attached images\nLeonardo / Freepik: generate images"
+                    "Best: auto select provider for text, image understanding, image generation, and video generation\n"
+                            + "Groq: best for text chat\n"
+                            + "Google Vision: read attached images\n"
+                            + "Leonardo: cinematic or concept-style image generation\n"
+                            + "Freepik: design-focused image generation and video generation"
             ));
         }
         if (attachImageButton != null) {
