@@ -12,13 +12,18 @@ import org.apache.poi.xwpf.usermodel.XWPFRun;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ExportService {
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final Charset PDF_CHARSET = Charset.forName("windows-1252");
 
     // ================= EXPORT METHODS =================
     
@@ -84,7 +89,8 @@ public class ExportService {
             contentStream.setFont(PDType1Font.HELVETICA_BOLD, 16);
             contentStream.beginText();
             contentStream.newLineAtOffset(50, 750);
-            contentStream.showText("Chat Export: " + conversation.getTitle());
+            String safeTitle = sanitizeForPdf(conversation.getTitle()).replace("\r", " ").replace("\n", " ");
+            contentStream.showText("Chat Export: " + safeTitle);
             contentStream.endText();
             
             // Add messages
@@ -94,7 +100,15 @@ public class ExportService {
             for (Message msg : conversation.getMessages()) {
                 String sender = msg.getSender() == Message.Sender.USER ? "USER" : "CORTEX";
                 String timestamp = msg.getTimestamp().format(DATE_FORMATTER);
-                String content = msg.getContent();
+                String content = sanitizeForPdf(msg.getContent());
+
+                if (yPosition < 70) {
+                    contentStream.close();
+                    page = new PDPage();
+                    document.addPage(page);
+                    contentStream = new PDPageContentStream(document, page);
+                    yPosition = 750;
+                }
                 
                 // Message header
                 contentStream.beginText();
@@ -105,9 +119,8 @@ public class ExportService {
                 
                 yPosition -= 15;
                 
-                // Message content (wrap text)
-                String[] lines = wrapText(content, 80);
-                contentStream.setFont(PDType1Font.HELVETICA, 10);
+                // Message content (wrap text while preserving explicit line breaks)
+                List<String> lines = wrapTextPreservingLineBreaks(content, 80);
                 
                 for (String line : lines) {
                     if (yPosition < 50) {
@@ -117,11 +130,14 @@ public class ExportService {
                         contentStream = new PDPageContentStream(document, page);
                         yPosition = 750;
                     }
-                    
-                    contentStream.beginText();
-                    contentStream.newLineAtOffset(60, yPosition);
-                    contentStream.showText(line);
-                    contentStream.endText();
+
+                    if (!line.isEmpty()) {
+                        contentStream.beginText();
+                        contentStream.setFont(PDType1Font.HELVETICA, 10);
+                        contentStream.newLineAtOffset(60, yPosition);
+                        contentStream.showText(line);
+                        contentStream.endText();
+                    }
                     yPosition -= 12;
                 }
                 
@@ -212,5 +228,51 @@ public class ExportService {
         }
         
         return lines.isEmpty() ? new String[]{ text } : lines.toArray(new String[0]);
+    }
+
+    private static List<String> wrapTextPreservingLineBreaks(String text, int maxWidth) {
+        if (text == null || text.isEmpty()) {
+            return List.of("");
+        }
+
+        List<String> wrappedLines = new ArrayList<>();
+        String normalizedText = text.replace("\r\n", "\n").replace('\r', '\n');
+        String[] rawLines = normalizedText.split("\n", -1);
+
+        for (String rawLine : rawLines) {
+            String[] lineParts = wrapText(rawLine, maxWidth);
+            for (String linePart : lineParts) {
+                wrappedLines.add(linePart == null ? "" : linePart);
+            }
+        }
+
+        return wrappedLines;
+    }
+
+    private static String sanitizeForPdf(String text) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+
+        CharsetEncoder encoder = PDF_CHARSET.newEncoder();
+        StringBuilder sanitized = new StringBuilder(text.length());
+
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == '\r' || ch == '\n') {
+                sanitized.append(ch);
+                continue;
+            }
+            if (ch == '\t') {
+                sanitized.append("    ");
+                continue;
+            }
+            if (Character.isISOControl(ch)) {
+                continue;
+            }
+            sanitized.append(encoder.canEncode(ch) ? ch : '?');
+        }
+
+        return sanitized.toString();
     }
 }
