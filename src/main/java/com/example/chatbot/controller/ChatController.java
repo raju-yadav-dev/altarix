@@ -7,6 +7,7 @@ import com.example.chatbot.service.CodeExecutionService;
 import com.example.chatbot.service.ExportService;
 import com.example.chatbot.service.LanguageConfigService;
 import com.example.chatbot.service.SettingsManager;
+import com.example.chatbot.visualizer.CodeVisualizationDialog;
 import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
 import javafx.animation.PauseTransition;
@@ -1958,10 +1959,44 @@ public class ChatController {
         codeArea.getStyleClass().add("message-code");
         applyResponsiveMaxWidth(codeArea);
 
-        VBox codeBox = new VBox(6, header, codeArea);
+        Button visualizeButton = new Button("Code Visualization");
+        visualizeButton.getStyleClass().addAll("message-code-copy", "message-code-visualize");
+        visualizeButton.setFocusTraversable(false);
+        visualizeButton.setOnAction(event -> openCodeVisualizationDialog(normalizedLanguage, code));
+
+        HBox visualizeRow = new HBox(visualizeButton);
+        visualizeRow.getStyleClass().add("message-code-visualize-row");
+        visualizeRow.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox codeBox = new VBox(6, header, codeArea, visualizeRow);
         codeBox.getStyleClass().add("message-code-block");
         applyResponsiveMaxWidth(codeBox);
         return codeBox;
+    }
+
+    private void openCodeVisualizationDialog(String language, String code) {
+        if (messageBox == null || messageBox.getScene() == null || messageBox.getScene().getWindow() == null) {
+            return;
+        }
+
+        List<String> themeClasses = new ArrayList<>();
+        Node rootNode = messageBox.getScene().getRoot();
+        if (rootNode != null) {
+            for (String styleClass : rootNode.getStyleClass()) {
+                if (styleClass != null && (styleClass.equals("window-root") || styleClass.startsWith("theme-"))) {
+                    themeClasses.add(styleClass);
+                }
+            }
+        }
+
+        CodeVisualizationDialog.show(
+                messageBox.getScene().getWindow(),
+            messageBox.getScene(),
+            rootNode,
+                language,
+                code,
+                themeClasses
+        );
     }
 
     private double computeMessageMaxWidth() {

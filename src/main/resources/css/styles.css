@@ -665,6 +665,7 @@
     -fx-background-radius: 6;
     -fx-padding: 8 20;
     -fx-cursor: hand;
+    -fx-alignment: center;
 }
 
 .profile-edit-button:hover {
@@ -684,6 +685,11 @@
 
 .profile-edit-field:focused {
     -fx-border-color: -app-accent;
+}
+
+.profile-panel-root .button.logout-confirm-no,
+.profile-panel-root .button.profile-edit-button {
+    -fx-min-width: 110;
 }
 
 /* About dialog */
@@ -764,6 +770,7 @@
     -fx-background-radius: 8;
     -fx-border-radius: 8;
     -fx-cursor: hand;
+    -fx-alignment: center;
 }
 
 .logout-confirm-no {

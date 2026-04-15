@@ -104,6 +104,7 @@ public class SettingsDialogController {
         pages.put("Advanced", buildAdvancedPage());
 
         pages.put("Code Execution", buildExecutionPage());
+        pages.put("Code Visualizer", buildCodeVisualizerPage());
         pages.put("Terminal", buildTerminalPage());
         pages.put("Supporting language", buildRuntimePage());
         pages.put("AI Model", buildAIPage());
@@ -113,6 +114,7 @@ public class SettingsDialogController {
         if (mode == DialogMode.SETTINGS) {
             return FXCollections.observableArrayList(
                     SidebarEntry.page("Code Execution"),
+                SidebarEntry.page("Code Visualizer"),
                     SidebarEntry.page("Terminal"),
                     SidebarEntry.page("Supporting language"),
                     SidebarEntry.page("AI Model")
@@ -121,6 +123,7 @@ public class SettingsDialogController {
         return FXCollections.observableArrayList(
                 SidebarEntry.page("Appearance"),
                 SidebarEntry.page("Chat Behavior"),
+            SidebarEntry.page("Code Visualizer"),
                 SidebarEntry.page("Privacy"),
                 SidebarEntry.page("Advanced")
         );
@@ -226,6 +229,75 @@ public class SettingsDialogController {
         page.getChildren().add(createToggleRow("Confirm before running code", "execution.confirmBeforeRun", settings.getBoolean("execution.confirmBeforeRun", false)));
         return page;
     }
+
+        private VBox buildCodeVisualizerPage() {
+        VBox page = createPage("Code Visualizer");
+        Label hint = new Label("Control section popout dialogs and linked-list visualization behavior.");
+        hint.setWrapText(true);
+        hint.getStyleClass().add("settings-hint");
+        page.getChildren().add(hint);
+
+        page.getChildren().add(createToggleRow(
+            "Enable section popout icons",
+            "codeVisualizer.enableSectionPopout",
+            settings.getBoolean("codeVisualizer.enableSectionPopout", true)
+        ));
+
+        page.getChildren().add(createComboRow(
+            "Default variable shape",
+            "codeVisualizer.defaultVariableShape",
+            new String[]{"Bubble", "Rectangle"},
+            settings.getString("codeVisualizer.defaultVariableShape", "Bubble")
+        ));
+
+        page.getChildren().add(createSpinnerRow(
+            "Visualizer font size",
+            "codeVisualizer.fontSize",
+            10,
+            18,
+            settings.getInt("codeVisualizer.fontSize", 12)
+        ));
+
+        page.getChildren().add(createComboRow(
+            "Visualizer text color",
+            "codeVisualizer.textColorMode",
+            new String[]{"Default", "High Contrast", "Soft"},
+            settings.getString("codeVisualizer.textColorMode", "Default")
+        ));
+
+        page.getChildren().add(createComboRow(
+            "Playback speed",
+            "codeVisualizer.playbackSpeed",
+            new String[]{"Slow", "Normal", "Fast"},
+            settings.getString("codeVisualizer.playbackSpeed", "Normal")
+        ));
+
+        page.getChildren().add(createToggleRow(
+            "Enable stack-focus mode by default",
+            "codeVisualizer.stackFocusDefault",
+            settings.getBoolean("codeVisualizer.stackFocusDefault", false)
+        ));
+
+        page.getChildren().add(createToggleRow(
+            "Linked-list floating animation",
+            "codeVisualizer.linkedListFloatingEnabled",
+            settings.getBoolean("codeVisualizer.linkedListFloatingEnabled", true)
+        ));
+
+        page.getChildren().add(createToggleRow(
+            "Show wrapped row markers",
+            "codeVisualizer.linkedListRowMarkersEnabled",
+            settings.getBoolean("codeVisualizer.linkedListRowMarkersEnabled", true)
+        ));
+
+        page.getChildren().add(createToggleRow(
+            "Show next/prev legend",
+            "codeVisualizer.linkedListLegendEnabled",
+            settings.getBoolean("codeVisualizer.linkedListLegendEnabled", true)
+        ));
+
+        return page;
+        }
 
     // ================= TERMINAL =================
     private VBox buildTerminalPage() {
@@ -728,6 +800,13 @@ public class SettingsDialogController {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         row.getChildren().addAll(lbl, spacer, spinner);
+        if (key != null && key.startsWith("codeVisualizer.")) {
+            spinner.valueProperty().addListener((obs, oldVal, newVal) -> {
+                if (newVal != null) {
+                    settings.set(key, newVal);
+                }
+            });
+        }
         row.setUserData(new SettingBinding(key, spinner::getValue));
         return row;
     }
@@ -745,6 +824,13 @@ public class SettingsDialogController {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         row.getChildren().addAll(lbl, spacer, combo);
+        if (key != null && key.startsWith("codeVisualizer.")) {
+            combo.valueProperty().addListener((obs, oldVal, newVal) -> {
+                if (newVal != null) {
+                    settings.set(key, newVal);
+                }
+            });
+        }
         row.setUserData(new SettingBinding(key, combo::getValue));
         return row;
     }

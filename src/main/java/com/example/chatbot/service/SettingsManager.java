@@ -65,6 +65,17 @@ public final class SettingsManager {
         putDefault("execution.autoCleanTempFiles", true);
         putDefault("execution.confirmBeforeRun", false);
 
+        // Code Visualizer
+        putDefault("codeVisualizer.enableSectionPopout", true);
+        putDefault("codeVisualizer.defaultVariableShape", "Bubble");
+        putDefault("codeVisualizer.fontSize", 12);
+        putDefault("codeVisualizer.textColorMode", "Default");
+        putDefault("codeVisualizer.playbackSpeed", "Normal");
+        putDefault("codeVisualizer.stackFocusDefault", false);
+        putDefault("codeVisualizer.linkedListFloatingEnabled", true);
+        putDefault("codeVisualizer.linkedListRowMarkersEnabled", true);
+        putDefault("codeVisualizer.linkedListLegendEnabled", true);
+
         // Terminal
         putDefault("terminal.defaultShell", "Cortex");
         putDefault("terminal.clearBeforeRun", false);
@@ -104,6 +115,13 @@ public final class SettingsManager {
         putDefault("profile.name", "Cortex User");
         putDefault("profile.email", "user@example.com");
         putDefault("profile.plan", "Free");
+        putDefault("auth.loggedIn", false);
+        putDefault("auth.token", "");
+        putDefault("auth.userId", "");
+        putDefault("auth.accountName", "");
+        putDefault("auth.accountUsername", "");
+        putDefault("auth.accountEmail", "");
+        putDefault("auth.accountPassword", "");
 
         // Advanced
         putDefault("advanced.debugLogs", false);

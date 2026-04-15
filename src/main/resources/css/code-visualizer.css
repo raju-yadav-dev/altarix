@@ -1,0 +1,752 @@
+.code-visualizer-root {
+    -fx-background-color:
+        linear-gradient(to bottom, derive(-app-surface, 2%), -app-bg 38%, -app-bg 100%);
+    -fx-background-radius: 18;
+    -fx-border-color: -app-border;
+    -fx-border-radius: 18;
+    -fx-border-width: 1;
+    -fx-effect: dropshadow(gaussian, -app-muted-hover, 20, 0.24, 0, 8);
+}
+
+.visualization-root-pane {
+    -fx-background-color: -app-bg;
+    -fx-font-family: "Segoe UI", "Inter", sans-serif;
+}
+
+.code-visualizer-titlebar {
+    -fx-background-color: -app-surface;
+    -fx-border-color: -app-border;
+    -fx-border-width: 0 0 1 0;
+    -fx-background-radius: 18 18 0 0;
+    -fx-border-radius: 18 18 0 0;
+    -fx-padding: 8 10 8 12;
+    -fx-alignment: center-left;
+}
+
+.code-visualizer-titlebar-label {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 13px;
+    -fx-font-weight: 700;
+}
+
+.code-visualizer-titlebar-close {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-text-fill: -app-text-primary;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-padding: 2 10 2 10;
+    -fx-cursor: hand;
+}
+
+.code-visualizer-titlebar-close:hover {
+    -fx-background-color: -app-muted-hover;
+}
+
+.code-visualizer-popout {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-text-fill: -app-text-primary;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-padding: 0;
+    -fx-min-width: 22;
+    -fx-min-height: 22;
+    -fx-pref-width: 22;
+    -fx-pref-height: 22;
+    -fx-cursor: hand;
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+}
+
+.code-visualizer-popout:hover {
+    -fx-background-color: -app-muted-hover;
+}
+
+.code-visualizer-dock-back {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-text-fill: -app-text-primary;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-padding: 0;
+    -fx-min-width: 24;
+    -fx-min-height: 24;
+    -fx-pref-width: 24;
+    -fx-pref-height: 24;
+    -fx-cursor: hand;
+    -fx-font-size: 13px;
+    -fx-font-weight: 700;
+}
+
+.code-visualizer-dock-back:hover {
+    -fx-background-color: -app-muted-hover;
+}
+
+.code-visualizer-split-pane {
+    -fx-background-color: -app-bg;
+    -fx-padding: 12;
+    -fx-background-radius: 0 0 18 18;
+}
+
+.code-visualizer-split-pane,
+.code-visualizer-split-pane > .content,
+.code-visualizer-vertical-split,
+.code-visualizer-vertical-split > .content {
+    -fx-background-color: -app-bg;
+    -fx-background-radius: 0 0 16 16;
+}
+
+.panel-container {
+    -fx-padding: 0 0 0 20;
+}
+
+.visualizer-pane {
+    -fx-background-color: -app-surface;
+    -fx-border-color: -app-border;
+    -fx-border-width: 1;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+    -fx-padding: 15;
+}
+
+.code-visualizer-split-pane > .split-pane-divider,
+.code-visualizer-vertical-split > .split-pane-divider {
+    -fx-background-color: -app-border;
+    -fx-padding: 0 1 0 1;
+}
+
+.code-visualizer-editor-pane,
+.code-visualizer-right-pane,
+.viz-panel {
+    -fx-background-color: -app-surface;
+    -fx-border-color: -app-border;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-effect: dropshadow(gaussian, -app-muted-hover, 12, 0.16, 0, 2);
+}
+
+.code-visualizer-editor-pane,
+.code-visualizer-right-pane {
+    -fx-padding: 16;
+}
+
+.code-visualizer-title,
+.viz-panel-title {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 15px;
+    -fx-font-weight: 700;
+}
+
+.code-visualizer-subtitle,
+.code-visualizer-status,
+.viz-empty-label,
+.viz-array-index,
+.viz-hash-bucket-label,
+.viz-stack-frame-local,
+.viz-null-label,
+.viz-head-label {
+    -fx-text-fill: -app-text-secondary;
+}
+
+.code-visualizer-editor {
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+    -fx-background-color: -app-surface-elevated;
+    -fx-control-inner-background: -app-surface-elevated;
+    -fx-text-fill: -app-text-primary;
+    -fx-highlight-fill: -app-focus-ring;
+    -fx-highlight-text-fill: #ffffff;
+    -fx-border-color: -app-border;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 8;
+}
+
+.editor-scroll-pane {
+    -fx-fit-to-width: true;
+    -fx-fit-to-height: true;
+}
+
+.code-visualizer-controls,
+.code-visualizer-status,
+.message-code-visualize-row {
+    -fx-alignment: center-left;
+}
+
+.code-visualizer-shape-row {
+    -fx-alignment: center-left;
+    -fx-padding: 2 2 2 2;
+    -fx-text-fill: -app-text-primary;
+}
+
+.code-visualizer-control-label,
+.code-visualizer-shape-row .label {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-weight: 700;
+}
+
+.code-visualizer-shape-toggle {
+    -fx-text-fill: -app-text-primary;
+}
+
+.code-visualizer-status {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-border-radius: 999;
+    -fx-background-radius: 999;
+    -fx-padding: 8 10 8 10;
+}
+
+.code-visualizer-status .label {
+    -fx-text-fill: -app-text-primary;
+}
+
+.code-visualizer-controls .button,
+.code-visualizer-shape-row .radio-button {
+    -fx-cursor: hand;
+}
+
+.code-visualizer-mini-combo {
+    -fx-pref-width: 146;
+}
+
+.code-visualizer-mini-combo,
+.code-visualizer-mini-combo .list-cell {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-text-fill: -app-text-primary;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+}
+
+.code-visualizer-mini-combo .label {
+    -fx-text-fill: -app-text-primary;
+}
+
+.code-visualizer-mini-combo .arrow-button {
+    -fx-background-color: transparent;
+}
+
+.code-visualizer-mini-combo .arrow {
+    -fx-background-color: -app-text-secondary;
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: -app-surface;
+    -fx-border-color: -app-border;
+}
+
+.combo-box-popup .list-cell {
+    -fx-background-color: -app-surface;
+    -fx-text-fill: -app-text-primary;
+}
+
+.combo-box-popup .list-cell:hover,
+.combo-box-popup .list-cell:selected {
+    -fx-background-color: -app-muted-hover;
+}
+
+.code-visualizer-stack-slider {
+    -fx-pref-height: 20;
+}
+
+.code-visualizer-stack-slider .track {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+}
+
+.code-visualizer-stack-slider .thumb {
+    -fx-background-color: -app-accent;
+    -fx-background-radius: 999;
+}
+
+.code-visualizer-shape-row .radio-button {
+    -fx-text-fill: -app-text-primary;
+}
+
+.code-visualizer-shape-row .radio-button > .radio {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+}
+
+.code-visualizer-shape-row .radio-button:selected > .radio > .dot {
+    -fx-background-color: -app-accent;
+}
+
+.code-visualizer-controls .button {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-text-fill: -app-text-primary;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-padding: 6 12 6 12;
+    -fx-effect: dropshadow(gaussian, -app-muted-hover, 6, 0.12, 0, 1);
+}
+
+.code-visualizer-controls .button:hover {
+    -fx-background-color: -app-surface;
+}
+
+.code-visualizer-controls .button:pressed {
+    -fx-background-color: -app-muted-hover;
+}
+
+.code-visualizer-run {
+    -fx-background-color: -app-accent;
+    -fx-border-color: -app-accent;
+    -fx-text-fill: white;
+}
+
+.code-visualizer-run:hover {
+    -fx-background-color: -app-accent-hover;
+    -fx-border-color: -app-accent-hover;
+}
+
+.code-visualizer-run:pressed {
+    -fx-background-color: -app-accent-pressed;
+    -fx-border-color: -app-accent-pressed;
+}
+
+.code-visualizer-run-dots {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-weight: 800;
+    -fx-font-size: 14px;
+    -fx-padding: 0 4 0 0;
+}
+
+.code-visualizer-resize-bar {
+    -fx-padding: 0 10 8 10;
+    -fx-background-color: transparent;
+}
+
+.code-visualizer-resize-handle {
+    -fx-text-fill: -app-text-secondary;
+    -fx-font-size: 12px;
+    -fx-cursor: se-resize;
+    -fx-padding: 0 2 0 2;
+}
+
+.code-visualizer-resize-handle:hover {
+    -fx-text-fill: -app-accent;
+}
+
+.code-visualizer-step {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-text-fill: -app-text-primary;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-padding: 6 12 6 12;
+    -fx-font-weight: 700;
+}
+
+.code-visualizer-step:hover {
+    -fx-background-color: -app-surface;
+}
+
+.code-visualizer-step:pressed,
+.code-visualizer-step:selected {
+    -fx-background-color: -app-muted-hover;
+}
+
+.code-visualizer-reset {
+    -fx-border-style: segments(3, 3);
+}
+
+.message-code-visualize-row {
+    -fx-padding: 2 0 0 0;
+}
+
+.message-code-visualize {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+}
+
+.viz-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+    -fx-background-insets: 0;
+}
+
+.custom-scroll-pane {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-control-inner-background: -app-bg;
+}
+
+.viz-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.viz-scroll > .corner,
+.viz-scroll > .content {
+    -fx-background-color: transparent;
+}
+
+.viz-scroll .scroll-bar:vertical,
+.viz-scroll .scroll-bar:horizontal {
+    -fx-background-color: transparent;
+}
+
+.viz-scroll .thumb {
+    -fx-background-color: -app-border;
+    -fx-background-radius: 999;
+}
+
+.viz-scroll .thumb:hover {
+    -fx-background-color: -app-text-secondary;
+}
+
+.viz-variable-flow {
+    -fx-padding: 6;
+}
+
+.viz-variable-node {
+    -fx-padding: 4;
+    -fx-background-color: transparent;
+}
+
+.viz-variable-node:hover {
+    -fx-background-color: -app-muted-hover;
+    -fx-background-radius: 12;
+}
+
+.viz-variable-text {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 9px;
+    -fx-font-weight: 600;
+    -fx-text-alignment: center;
+    -fx-line-spacing: 1;
+}
+
+.viz-variable-bubble-shape {
+    -fx-fill: -app-surface-elevated;
+    -fx-stroke: -app-border;
+    -fx-stroke-width: 1.1;
+}
+
+.viz-variable-rect-shape {
+    -fx-fill: -app-surface-elevated;
+    -fx-stroke: -app-border;
+    -fx-arc-width: 14;
+    -fx-arc-height: 14;
+    -fx-stroke-width: 1.1;
+}
+
+.viz-garbage {
+    -fx-opacity: 0.3;
+}
+
+.viz-garbage-label {
+    -fx-opacity: 0.82;
+}
+
+.viz-garbage-shape {
+    -fx-stroke: -app-text-secondary;
+    -fx-stroke-dash-array: 4 4;
+}
+
+.viz-structure-pane {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 10;
+}
+
+.viz-structure-title,
+.viz-array-value,
+.viz-hash-entry-label,
+.viz-linked-value,
+.viz-stack-frame-title {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-weight: 700;
+}
+
+.viz-array-cell,
+.viz-hash-bucket,
+.viz-hash-entry {
+    -fx-fill: -app-surface-elevated;
+    -fx-stroke: -app-border;
+    -fx-stroke-width: 1;
+    -fx-effect: dropshadow(gaussian, -app-muted-hover, 6, 0.12, 0, 1);
+}
+
+.viz-capacity-cell {
+    -fx-fill: rgba(148, 163, 184, 0.08);
+    -fx-stroke-dash-array: 5 4;
+}
+
+.viz-linked-node {
+    -fx-fill: -app-surface-elevated;
+    -fx-stroke: -app-border;
+    -fx-stroke-width: 1.2;
+}
+
+.viz-linked-node-stack {
+    -fx-alignment: center;
+}
+
+.viz-row-marker {
+    -fx-text-fill: -app-text-secondary;
+    -fx-font-size: 10px;
+    -fx-font-weight: 700;
+}
+
+.viz-linked-legend {
+    -fx-padding: 2;
+}
+
+.viz-linked-legend-chip {
+    -fx-font-size: 10px;
+    -fx-font-weight: 700;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-padding: 2 8 2 8;
+}
+
+.viz-linked-legend-next {
+    -fx-text-fill: -app-accent;
+    -fx-border-color: -app-accent;
+    -fx-background-color: -app-surface-elevated;
+}
+
+.viz-linked-legend-prev {
+    -fx-text-fill: -app-text-secondary;
+    -fx-border-color: -app-text-secondary;
+    -fx-background-color: -app-surface-elevated;
+}
+
+.viz-pointer-line {
+    -fx-stroke: -app-text-secondary;
+    -fx-stroke-width: 1.3;
+}
+
+.viz-rope {
+    -fx-fill: transparent;
+    -fx-stroke-width: 2.3;
+    -fx-stroke-line-cap: round;
+    -fx-opacity: 0.95;
+}
+
+.viz-arrowhead {
+    -fx-stroke-width: 1.2;
+}
+
+.next-pointer {
+    -fx-stroke: -app-accent;
+    -fx-fill: -app-accent;
+}
+
+.prev-pointer {
+    -fx-stroke: -app-text-secondary;
+    -fx-fill: -app-text-secondary;
+}
+
+.viz-call-stack {
+    -fx-padding: 6;
+}
+
+.viz-stack-column {
+    -fx-spacing: 6;
+    -fx-padding: 2 0 0 0;
+}
+
+.viz-stack-top-marker {
+    -fx-text-fill: -app-accent;
+    -fx-font-size: 11px;
+    -fx-font-weight: 800;
+    -fx-padding: 0 0 2 0;
+}
+
+.viz-stack-compare-marker {
+    -fx-text-fill: -app-text-secondary;
+    -fx-font-size: 10px;
+    -fx-font-weight: 700;
+    -fx-padding: 0 0 2 0;
+}
+
+.viz-stack-frame {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 8;
+    -fx-effect: dropshadow(gaussian, -app-muted-hover, 8, 0.14, 0, 1);
+}
+
+.viz-stack-frame-block {
+    -fx-border-width: 1;
+    -fx-padding: 8 10 8 10;
+    -fx-spacing: 2;
+}
+
+.viz-stack-frame-active {
+    -fx-border-color: -app-accent;
+    -fx-background-color: -app-surface;
+}
+
+.viz-stack-frame-pop {
+    -fx-border-style: segments(3, 3);
+}
+
+.viz-stack-history-frame {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 8;
+}
+
+.viz-stack-history-inactive {
+    -fx-opacity: 0.68;
+}
+
+.viz-stack-history-meta {
+    -fx-text-fill: -app-text-secondary;
+    -fx-font-size: 10px;
+}
+
+.viz-stack-locals-header {
+    -fx-text-fill: -app-text-secondary;
+    -fx-font-size: 10px;
+    -fx-font-weight: 700;
+    -fx-padding: 2 0 0 0;
+}
+
+.viz-stack-local-line {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 10px;
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+}
+
+.viz-stack-local-line-changed {
+    -fx-text-fill: -app-accent;
+    -fx-font-weight: 700;
+}
+
+.viz-stack-badge {
+    -fx-font-size: 9px;
+    -fx-font-weight: 800;
+    -fx-padding: 1 6 1 6;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+}
+
+.viz-stack-badge-updated {
+    -fx-text-fill: #ffffff;
+    -fx-background-color: -app-accent;
+}
+
+.viz-stack-badge-returned {
+    -fx-text-fill: -app-text-secondary;
+    -fx-border-color: -app-text-secondary;
+    -fx-background-color: transparent;
+}
+
+.window-root.viz-font-small .code-visualizer-title,
+.window-root.viz-font-small .viz-panel-title {
+    -fx-font-size: 13px;
+}
+
+.window-root.viz-font-small .code-visualizer-subtitle,
+.window-root.viz-font-small .code-visualizer-status,
+.window-root.viz-font-small .label,
+.window-root.viz-font-small .button,
+.window-root.viz-font-small .radio-button,
+.window-root.viz-font-small .combo-box {
+    -fx-font-size: 11px;
+}
+
+.window-root.viz-font-small .code-visualizer-editor {
+    -fx-font-size: 11px;
+}
+
+.window-root.viz-font-medium .code-visualizer-title,
+.window-root.viz-font-medium .viz-panel-title {
+    -fx-font-size: 15px;
+}
+
+.window-root.viz-font-medium .code-visualizer-editor {
+    -fx-font-size: 12px;
+}
+
+.window-root.viz-font-large .code-visualizer-title,
+.window-root.viz-font-large .viz-panel-title {
+    -fx-font-size: 17px;
+}
+
+.window-root.viz-font-large .code-visualizer-subtitle,
+.window-root.viz-font-large .code-visualizer-status,
+.window-root.viz-font-large .label,
+.window-root.viz-font-large .button,
+.window-root.viz-font-large .radio-button,
+.window-root.viz-font-large .combo-box {
+    -fx-font-size: 14px;
+}
+
+.window-root.viz-font-large .code-visualizer-editor {
+    -fx-font-size: 14px;
+}
+
+.window-root.viz-text-default .code-visualizer-subtitle,
+.window-root.viz-text-default .code-visualizer-status,
+.window-root.viz-text-default .viz-empty-label,
+.window-root.viz-text-default .viz-array-index,
+.window-root.viz-text-default .viz-hash-bucket-label,
+.window-root.viz-text-default .viz-stack-history-meta,
+.window-root.viz-text-default .viz-stack-locals-header,
+.window-root.viz-text-default .viz-head-label,
+.window-root.viz-text-default .viz-null-label,
+.window-root.viz-text-default .viz-row-marker {
+    -fx-text-fill: -app-text-secondary;
+}
+
+.window-root.viz-text-soft .code-visualizer-subtitle,
+.window-root.viz-text-soft .code-visualizer-status,
+.window-root.viz-text-soft .viz-empty-label,
+.window-root.viz-text-soft .viz-array-index,
+.window-root.viz-text-soft .viz-hash-bucket-label,
+.window-root.viz-text-soft .viz-stack-history-meta,
+.window-root.viz-text-soft .viz-stack-locals-header,
+.window-root.viz-text-soft .viz-head-label,
+.window-root.viz-text-soft .viz-null-label,
+.window-root.viz-text-soft .viz-row-marker {
+    -fx-text-fill: derive(-app-text-primary, -25%);
+}
+
+.window-root.viz-text-high-contrast .code-visualizer-subtitle,
+.window-root.viz-text-high-contrast .code-visualizer-status,
+.window-root.viz-text-high-contrast .viz-empty-label,
+.window-root.viz-text-high-contrast .viz-array-index,
+.window-root.viz-text-high-contrast .viz-hash-bucket-label,
+.window-root.viz-text-high-contrast .viz-stack-history-meta,
+.window-root.viz-text-high-contrast .viz-stack-locals-header,
+.window-root.viz-text-high-contrast .viz-head-label,
+.window-root.viz-text-high-contrast .viz-null-label,
+.window-root.viz-text-high-contrast .viz-row-marker,
+.window-root.viz-text-high-contrast .viz-stack-local-line,
+.window-root.viz-text-high-contrast .viz-linked-value,
+.window-root.viz-text-high-contrast .viz-array-value,
+.window-root.viz-text-high-contrast .viz-hash-entry-label {
+    -fx-text-fill: -app-text-primary;
+}
+
+.window-root.viz-text-high-contrast .code-visualizer-editor {
+    -fx-text-fill: -app-text-primary;
+    -fx-highlight-fill: -app-accent;
+}
+
+.window-root.theme-light .code-visualizer-editor,
+.window-root.theme-light .viz-structure-pane,
+.window-root.theme-light .viz-stack-frame {
+    -fx-background-color: -app-surface-elevated;
+    -fx-control-inner-background: -app-surface-elevated;
+}

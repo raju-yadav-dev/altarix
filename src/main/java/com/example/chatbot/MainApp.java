@@ -1,12 +1,12 @@
 package com.example.chatbot;
 
+import com.cortex.util.IconResources;
 import com.example.chatbot.controller.MainController;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Cursor;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.image.Image;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.paint.Color;
@@ -38,15 +38,7 @@ public class MainApp extends Application {
         primaryStage.initStyle(StageStyle.TRANSPARENT);
         primaryStage.setTitle("Cortex");
         primaryStage.setScene(scene);
-        var appIcon = getClass().getResource("/icon/Cortex.png");
-        if (appIcon != null) {
-            primaryStage.getIcons().add(new Image(appIcon.toExternalForm()));
-        } else {
-            var icoIcon = getClass().getResource("/icon/Cortex.ico");
-            if (icoIcon != null) {
-                primaryStage.getIcons().add(new Image(icoIcon.toExternalForm()));
-            }
-        }
+        IconResources.addStageIcons(primaryStage, getClass());
         primaryStage.setResizable(true);
 
         // ---- Fit Initial Window Into Current Screen (60% of screen, centered) ----

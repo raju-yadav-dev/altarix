@@ -1,7 +1,9 @@
 package com.example.chatbot.controller;
 
 import com.example.chatbot.model.Conversation;
+import com.example.chatbot.service.AuthApiClient;
 import com.example.chatbot.service.ChatService;
+import com.cortex.util.IconResources;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
@@ -44,6 +46,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import com.example.chatbot.service.SettingsManager;
 
@@ -98,6 +101,12 @@ public class MainController {
     @FXML
     private MenuButton profileButton;
     @FXML
+    private MenuItem userProfileItem;
+    @FXML
+    private MenuItem accountInfoItem;
+    @FXML
+    private MenuItem logoutItem;
+    @FXML
     private MenuButton settingsButton;
     @FXML
     private Menu themeMenu;
@@ -139,6 +148,7 @@ public class MainController {
     private String committedThemeKey;
     private final Map<RadioMenuItem, String> themeMenuBindings = new LinkedHashMap<>();
     private final SettingsManager settingsManager = SettingsManager.getInstance();
+    private final AuthApiClient authApiClient = new AuthApiClient();
     private final GaussianBlur modalBlur = new GaussianBlur(0);
     private Region modalOverlay;
     private Timeline modalBackdropTimeline;
@@ -167,6 +177,7 @@ public class MainController {
         setButtonIcons();
         loadTitleBarIcon();
         fixPopupTransparency();
+        refreshProfileMenuState();
 
         // ---- Default Theme (from saved settings) + First Conversation ----
         committedThemeKey = settingsManager.getString("appearance.theme", DEFAULT_THEME);
@@ -182,14 +193,9 @@ public class MainController {
             return;
         }
         try {
-            var resource = getClass().getResource("/icon/Cortex.png");
-            if (resource != null) {
-                appIconView.setImage(new Image(resource.toExternalForm()));
-                return;
-            }
-            var icoResource = getClass().getResource("/icon/Cortex.ico");
-            if (icoResource != null) {
-                appIconView.setImage(new Image(icoResource.toExternalForm()));
+            Image bestFitIcon = IconResources.loadBestFit(getClass(), 32);
+            if (bestFitIcon != null) {
+                appIconView.setImage(bestFitIcon);
             }
         } catch (Exception ignored) {
             // Keep UI stable even if icon resource is unavailable.
@@ -852,6 +858,53 @@ public class MainController {
         }
     }
 
+    private boolean isLoggedIn() {
+        return settingsManager.getBoolean("auth.loggedIn", false)
+            && !settingsManager.getString("auth.token", "").isBlank();
+    }
+
+    private String getAuthToken() {
+        return settingsManager.getString("auth.token", "").trim();
+    }
+
+    private void applyAuthenticatedUser(AuthApiClient.UserProfile user, String token) {
+        if (user == null || token == null || token.isBlank()) {
+            return;
+        }
+        settingsManager.set("auth.loggedIn", true);
+        settingsManager.set("auth.token", token);
+        settingsManager.set("auth.userId", user.id());
+        settingsManager.set("auth.accountName", user.name());
+        settingsManager.set("auth.accountUsername", user.username());
+        settingsManager.set("auth.accountEmail", user.email());
+        settingsManager.set("auth.accountPassword", "");
+        settingsManager.set("profile.name", user.name().isBlank() ? "Cortex User" : user.name());
+        settingsManager.set("profile.email", user.email().isBlank() ? "user@example.com" : user.email());
+        settingsManager.save();
+    }
+
+    private void clearAuthenticatedUser() {
+        settingsManager.set("auth.loggedIn", false);
+        settingsManager.set("auth.token", "");
+        settingsManager.set("auth.userId", "");
+        settingsManager.set("auth.accountPassword", "");
+        settingsManager.save();
+    }
+
+    private void refreshProfileMenuState() {
+        boolean loggedIn = isLoggedIn();
+        if (userProfileItem != null) {
+            userProfileItem.setDisable(!loggedIn);
+        }
+        if (accountInfoItem != null) {
+            accountInfoItem.setDisable(!loggedIn);
+        }
+        if (logoutItem != null) {
+            logoutItem.setText(loggedIn ? "Logout" : "Login");
+            logoutItem.setGraphic(createMenuIcon(loggedIn ? "\uD83D\uDEAA" : "\uD83D\uDD10"));
+        }
+    }
+
     // ================= DIALOG HELPER =================
     private javafx.stage.Stage createStyledDialog(String title, javafx.scene.Parent content, double width, double height, javafx.stage.Stage owner) {
         javafx.stage.Stage dialog = new javafx.stage.Stage();
@@ -904,9 +957,210 @@ public class MainController {
         return dialog;
     }
 
+    private void openAuthDialog() {
+        Label titleLabel = new Label("Welcome to Cortex");
+        titleLabel.getStyleClass().add("logout-confirm-title");
+
+        Label subtitleLabel = new Label("Log in to your account or create one to continue with your saved profile.");
+        subtitleLabel.getStyleClass().add("logout-confirm-message");
+        subtitleLabel.setWrapText(true);
+
+        Button loginTab = new Button("Login");
+        loginTab.getStyleClass().add("profile-edit-button");
+
+        Button signupTab = new Button("Sign Up");
+        signupTab.getStyleClass().add("logout-confirm-no");
+
+        HBox tabRow = new HBox(10, loginTab, signupTab);
+        tabRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+        javafx.scene.control.TextField nameField = new javafx.scene.control.TextField();
+        nameField.setPromptText("Full name");
+        nameField.getStyleClass().add("profile-edit-field");
+
+        javafx.scene.control.TextField usernameField = new javafx.scene.control.TextField(
+            settingsManager.getString("auth.accountUsername", "")
+        );
+        usernameField.setPromptText("Username");
+        usernameField.getStyleClass().add("profile-edit-field");
+
+        javafx.scene.control.TextField emailField = new javafx.scene.control.TextField(
+            settingsManager.getString("auth.accountEmail", "")
+        );
+        emailField.setPromptText("Email");
+        emailField.getStyleClass().add("profile-edit-field");
+
+        javafx.scene.control.TextField identifierField = new javafx.scene.control.TextField(
+            settingsManager.getString("auth.accountEmail", "")
+        );
+        identifierField.setPromptText("Email or username");
+        identifierField.getStyleClass().add("profile-edit-field");
+
+        javafx.scene.control.PasswordField passwordField = new javafx.scene.control.PasswordField();
+        passwordField.setPromptText("Password");
+        passwordField.getStyleClass().add("profile-edit-field");
+
+        javafx.scene.control.PasswordField confirmPasswordField = new javafx.scene.control.PasswordField();
+        confirmPasswordField.setPromptText("Confirm password");
+        confirmPasswordField.getStyleClass().add("profile-edit-field");
+
+        Label feedbackLabel = new Label();
+        feedbackLabel.getStyleClass().add("logout-confirm-message");
+        feedbackLabel.setWrapText(true);
+        feedbackLabel.setVisible(false);
+        feedbackLabel.setManaged(false);
+
+        Button primaryActionButton = new Button("Login");
+        primaryActionButton.getStyleClass().add("profile-edit-button");
+
+        final boolean[] signupMode = {false};
+
+        VBox content = new VBox(
+            12,
+            titleLabel,
+            subtitleLabel,
+            tabRow,
+            nameField,
+            usernameField,
+            emailField,
+            identifierField,
+            passwordField,
+            confirmPasswordField,
+            feedbackLabel,
+            primaryActionButton
+        );
+        content.getStyleClass().add("profile-panel-root");
+        content.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        content.setPadding(new javafx.geometry.Insets(22, 28, 22, 28));
+
+        javafx.stage.Stage dialog = createStyledDialog("Account Access", content, 400, 390, null);
+
+        Runnable syncMode = () -> {
+            boolean inSignupMode = signupMode[0];
+            nameField.setManaged(inSignupMode);
+            nameField.setVisible(inSignupMode);
+            usernameField.setManaged(inSignupMode);
+            usernameField.setVisible(inSignupMode);
+            emailField.setManaged(inSignupMode);
+            emailField.setVisible(inSignupMode);
+            identifierField.setManaged(!inSignupMode);
+            identifierField.setVisible(!inSignupMode);
+            confirmPasswordField.setManaged(inSignupMode);
+            confirmPasswordField.setVisible(inSignupMode);
+            primaryActionButton.setText(inSignupMode ? "Create Account" : "Login");
+            loginTab.getStyleClass().setAll(inSignupMode ? "logout-confirm-no" : "profile-edit-button");
+            signupTab.getStyleClass().setAll(inSignupMode ? "profile-edit-button" : "logout-confirm-no");
+            feedbackLabel.setVisible(false);
+            feedbackLabel.setManaged(false);
+        };
+
+        loginTab.setOnAction(e -> {
+            signupMode[0] = false;
+            syncMode.run();
+        });
+        signupTab.setOnAction(e -> {
+            signupMode[0] = true;
+            syncMode.run();
+        });
+
+        primaryActionButton.setOnAction(e -> {
+            String name = nameField.getText() == null ? "" : nameField.getText().trim();
+            String username = usernameField.getText() == null ? "" : usernameField.getText().trim();
+            String email = emailField.getText() == null ? "" : emailField.getText().trim();
+            String identifier = identifierField.getText() == null ? "" : identifierField.getText().trim();
+            String password = passwordField.getText() == null ? "" : passwordField.getText();
+            String confirmPassword = confirmPasswordField.getText() == null ? "" : confirmPasswordField.getText();
+
+            feedbackLabel.setVisible(true);
+            feedbackLabel.setManaged(true);
+
+            if (signupMode[0]) {
+                if (name.isBlank()) {
+                    feedbackLabel.setText("Name is required to create an account.");
+                    return;
+                }
+                if (username.isBlank()) {
+                    feedbackLabel.setText("Username is required to create an account.");
+                    return;
+                }
+                if (email.isBlank() || password.isBlank()) {
+                    feedbackLabel.setText("Email and password are required.");
+                    return;
+                }
+                if (!password.equals(confirmPassword)) {
+                    feedbackLabel.setText("Passwords do not match.");
+                    return;
+                }
+
+                primaryActionButton.setDisable(true);
+                feedbackLabel.setText("Creating your account...");
+                CompletableFuture
+                    .supplyAsync(() -> {
+                        try {
+                            return authApiClient.signup(name, username, email, password);
+                        } catch (Exception ex) {
+                            throw new RuntimeException(ex);
+                        }
+                    })
+                    .whenComplete((response, throwable) -> Platform.runLater(() -> {
+                        primaryActionButton.setDisable(false);
+                        if (throwable != null) {
+                            feedbackLabel.setText(buildAuthErrorMessage(throwable));
+                            return;
+                        }
+                        if (!response.isSuccess() || response.user() == null || response.token().isBlank()) {
+                            feedbackLabel.setText(response.message());
+                            return;
+                        }
+                        applyAuthenticatedUser(response.user(), response.token());
+                        refreshProfileMenuState();
+                        dialog.close();
+                    }));
+                return;
+            }
+
+            if (identifier.isBlank() || password.isBlank()) {
+                feedbackLabel.setText("Email/username and password are required.");
+                return;
+            }
+
+            primaryActionButton.setDisable(true);
+            feedbackLabel.setText("Signing you in...");
+            CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        return authApiClient.login(identifier, password);
+                    } catch (Exception ex) {
+                        throw new RuntimeException(ex);
+                    }
+                })
+                .whenComplete((response, throwable) -> Platform.runLater(() -> {
+                    primaryActionButton.setDisable(false);
+                    if (throwable != null) {
+                        feedbackLabel.setText(buildAuthErrorMessage(throwable));
+                        return;
+                    }
+                    if (!response.isSuccess() || response.user() == null || response.token().isBlank()) {
+                        feedbackLabel.setText(response.message());
+                        return;
+                    }
+                    applyAuthenticatedUser(response.user(), response.token());
+                    refreshProfileMenuState();
+                    dialog.close();
+                }));
+        });
+
+        syncMode.run();
+        showDialogWithBackdrop(dialog);
+    }
+
     // ================= PROFILE PANEL =================
     @FXML
     private void openUserProfile() {
+        if (!isLoggedIn()) {
+            openAuthDialog();
+            return;
+        }
         String userName = settingsManager.getString("profile.name", "Cortex User");
         String userEmail = settingsManager.getString("profile.email", "user@example.com");
         String userPlan = settingsManager.getString("profile.plan", "Free");
@@ -952,16 +1206,31 @@ public class MainController {
         nameField.setPromptText("Name");
         nameField.getStyleClass().add("profile-edit-field");
 
+        javafx.scene.control.TextField usernameField = new javafx.scene.control.TextField(
+            settingsManager.getString("auth.accountUsername", "")
+        );
+        usernameField.setPromptText("Username");
+        usernameField.getStyleClass().add("profile-edit-field");
+
         javafx.scene.control.TextField emailField = new javafx.scene.control.TextField(emailLabel.getText());
         emailField.setPromptText("Email");
+        emailField.setDisable(true);
         emailField.getStyleClass().add("profile-edit-field");
+
+        Label feedbackLabel = new Label();
+        feedbackLabel.getStyleClass().add("logout-confirm-message");
+        feedbackLabel.setWrapText(true);
+        feedbackLabel.setVisible(false);
+        feedbackLabel.setManaged(false);
 
         javafx.scene.control.Button saveBtn = new javafx.scene.control.Button("Save");
         saveBtn.getStyleClass().add("profile-edit-button");
 
         VBox editContent = new VBox(12,
                 new Label("Name:"), nameField,
+                new Label("Username:"), usernameField,
                 new Label("Email:"), emailField,
+                feedbackLabel,
                 saveBtn);
         editContent.getStyleClass().add("profile-panel-root");
         editContent.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
@@ -970,24 +1239,55 @@ public class MainController {
         javafx.stage.Stage editDialog = createStyledDialog("Edit Profile", editContent, 340, 320, ownerDialog);
         saveBtn.setOnAction(e -> {
             String newName = nameField.getText().trim();
-            String newEmail = emailField.getText().trim();
-            if (!newName.isEmpty()) {
-                settingsManager.set("profile.name", newName);
-                nameLabel.setText(newName);
-                avatarLabel.setText(buildInitials(newName));
+            String newUsername = usernameField.getText().trim();
+            feedbackLabel.setVisible(true);
+            feedbackLabel.setManaged(true);
+
+            if (newName.isEmpty()) {
+                feedbackLabel.setText("Name is required.");
+                return;
             }
-            if (!newEmail.isEmpty()) {
-                settingsManager.set("profile.email", newEmail);
-                emailLabel.setText(newEmail);
+            if (newUsername.isEmpty()) {
+                feedbackLabel.setText("Username is required.");
+                return;
             }
-            settingsManager.save();
-            editDialog.close();
+
+            saveBtn.setDisable(true);
+            feedbackLabel.setText("Saving your profile...");
+            CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        return authApiClient.updateProfile(getAuthToken(), newName, newUsername, "");
+                    } catch (Exception ex) {
+                        throw new RuntimeException(ex);
+                    }
+                })
+                .whenComplete((response, throwable) -> Platform.runLater(() -> {
+                    saveBtn.setDisable(false);
+                    if (throwable != null) {
+                        feedbackLabel.setText(buildAuthErrorMessage(throwable));
+                        return;
+                    }
+                    if (!response.isSuccess() || response.user() == null) {
+                        feedbackLabel.setText(response.message());
+                        return;
+                    }
+                    applyAuthenticatedUser(response.user(), getAuthToken());
+                    nameLabel.setText(response.user().name());
+                    emailLabel.setText(response.user().email());
+                    avatarLabel.setText(buildInitials(response.user().name()));
+                    editDialog.close();
+                }));
         });
         editDialog.showAndWait();
     }
 
     @FXML
     private void openAccountInfo() {
+        if (!isLoggedIn()) {
+            openAuthDialog();
+            return;
+        }
         String userName = settingsManager.getString("profile.name", "Cortex User");
         String userEmail = settingsManager.getString("profile.email", "user@example.com");
         String userPlan = settingsManager.getString("profile.plan", "Free");
@@ -1015,6 +1315,10 @@ public class MainController {
 
     @FXML
     private void handleLogout() {
+        if (!isLoggedIn()) {
+            openAuthDialog();
+            return;
+        }
         Label icon = new Label("!");
         icon.getStyleClass().add("logout-confirm-icon");
 
@@ -1054,11 +1358,26 @@ public class MainController {
         showDialogWithBackdrop(dialog);
 
         if (confirmed[0]) {
-            // Clear session state — future auth integration point
-            settingsManager.set("profile.name", "Cortex User");
-            settingsManager.set("profile.email", "user@example.com");
-            settingsManager.save();
+            try {
+                authApiClient.logout(getAuthToken());
+            } catch (Exception ignored) {
+                // Clear local session even if the remote logout call fails.
+            }
+            clearAuthenticatedUser();
+            refreshProfileMenuState();
         }
+    }
+
+    private String buildAuthErrorMessage(Throwable throwable) {
+        Throwable cause = throwable;
+        if (throwable instanceof java.util.concurrent.CompletionException && throwable.getCause() != null) {
+            cause = throwable.getCause();
+        }
+        String message = cause.getMessage();
+        if (message == null || message.isBlank()) {
+            return "Could not reach the Cortex account service at " + authApiClient.getApiBaseUrl() + ".";
+        }
+        return "Could not reach the Cortex account service at " + authApiClient.getApiBaseUrl() + ": " + message;
     }
 
     // ================= ABOUT DIALOG =================
@@ -1114,3 +1433,4 @@ public class MainController {
         activeThemeStylesheet = stylesheet;
     }
 }
+

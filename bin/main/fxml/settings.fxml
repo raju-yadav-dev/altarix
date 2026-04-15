@@ -22,13 +22,13 @@
         </ScrollPane>
     </center>
 
-    <!-- BOTTOM: Save / Cancel -->
+    <!-- BOTTOM: Save / Close -->
     <bottom>
         <HBox alignment="CENTER_RIGHT" spacing="10" styleClass="settings-button-bar">
             <padding>
                 <Insets top="10" right="18" bottom="14" left="18" />
             </padding>
-            <Button fx:id="cancelButton" text="Cancel" styleClass="settings-cancel-button" focusTraversable="false" />
+            <Button fx:id="cancelButton" text="Close" styleClass="settings-cancel-button" focusTraversable="false" />
             <Button fx:id="saveButton" text="Save" styleClass="settings-save-button" focusTraversable="false" />
         </HBox>
     </bottom>

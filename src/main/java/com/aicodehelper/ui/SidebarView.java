@@ -1,6 +1,7 @@
 package com.aicodehelper.ui;
 
 import com.aicodehelper.util.AppConfig;
+import com.cortex.util.IconResources;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -58,12 +59,14 @@ public class SidebarView extends VBox {
         
         // Icon image
         try {
-            Image iconImage = new Image(getClass().getResourceAsStream("/icon/Cortex.png"));
-            ImageView iconView = new ImageView(iconImage);
-            iconView.setFitWidth(24);
-            iconView.setFitHeight(24);
-            iconView.setPreserveRatio(true);
-            logoContainer.getChildren().add(iconView);
+            Image iconImage = IconResources.loadBestFit(getClass(), 32);
+            if (iconImage != null) {
+                ImageView iconView = new ImageView(iconImage);
+                iconView.setFitWidth(24);
+                iconView.setFitHeight(24);
+                iconView.setPreserveRatio(true);
+                logoContainer.getChildren().add(iconView);
+            }
         } catch (Exception e) {
             System.err.println("Failed to load icon: " + e.getMessage());
         }

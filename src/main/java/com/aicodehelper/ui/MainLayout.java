@@ -3,6 +3,7 @@ package com.aicodehelper.ui;
 import com.aicodehelper.controller.ChatController;
 import com.aicodehelper.model.Message;
 import com.aicodehelper.util.AppConfig;
+import com.cortex.util.IconResources;
 import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
 import javafx.animation.ParallelTransition;
@@ -12,7 +13,6 @@ import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
-import javafx.scene.image.Image;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
@@ -153,13 +153,7 @@ public class MainLayout {
         Scene scene = new Scene(root, sceneWidth, sceneHeight);
         scene.getStylesheets().add(getClass().getResource(currentThemeCss).toExternalForm());
 
-        // Set application icon
-        try {
-            Image icon = new Image(getClass().getResourceAsStream("/icon/Cortex.png"));
-            stage.getIcons().add(icon);
-        } catch (Exception e) {
-            System.err.println("Failed to load application icon: " + e.getMessage());
-        }
+        IconResources.addStageIcons(stage, getClass());
 
         stage.setTitle(AppConfig.APP_NAME);
         stage.setScene(scene);
