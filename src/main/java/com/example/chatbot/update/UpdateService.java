@@ -14,6 +14,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -99,11 +100,32 @@ public final class UpdateService {
 
     private String resolveDownloadUrl(UpdateInfo update) {
         if (update == null) return "";
+        String ext = OsDetector.getInstallerExtension().toLowerCase(Locale.ROOT);
+        String osToken = OsDetector.getOsToken().toLowerCase(Locale.ROOT);
+
+        for (UpdateInfo.UpdateRow row : update.getUpdates()) {
+            if (row == null || row.getDownloadUrl().isEmpty()) {
+                continue;
+            }
+
+            String type = row.getType();
+            if (type.equals(ext)) {
+                return row.getDownloadUrl();
+            }
+            if (ext.equals("deb") && type.equals("linux")) {
+                return row.getDownloadUrl();
+            }
+            if (ext.equals("dmg") && (type.equals("mac") || type.equals("macos"))) {
+                return row.getDownloadUrl();
+            }
+            if (ext.equals("exe") && type.equals("windows")) {
+                return row.getDownloadUrl();
+            }
+        }
+
         String url = update.getDownloadUrl();
         if (url.isEmpty()) return "";
 
-        String osToken = OsDetector.getOsToken();
-        String ext = OsDetector.getInstallerExtension();
         if (url.contains("{os}") || url.contains("{ext}")) {
             return url.replace("{os}", osToken).replace("{ext}", ext);
         }
