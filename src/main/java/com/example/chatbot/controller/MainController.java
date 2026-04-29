@@ -38,6 +38,19 @@ import javafx.stage.PopupWindow;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpExchange;
+import java.net.InetSocketAddress;
+import java.awt.Desktop;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.io.OutputStream;
+import java.util.concurrent.Executors;
+import java.util.Map;
+import java.util.HashMap;
+import java.io.IOException;
 import javafx.geometry.Rectangle2D;
 import javafx.util.Duration;
 
@@ -153,6 +166,7 @@ public class MainController {
     private Region modalOverlay;
     private Timeline modalBackdropTimeline;
     private int modalDepth;
+    private com.example.chatbot.update.UpdateService updateService;
 
     // ================= INITIALIZATION =================
     @FXML
@@ -186,6 +200,9 @@ public class MainController {
         Conversation first = chatService.createConversation();
         chatList.getItems().add(first);
         chatList.getSelectionModel().select(first);
+        
+        // ---- Delay update check to ensure theme is fully applied ----
+        javafx.application.Platform.runLater(this::checkForUpdatesAfterThemeApplied);
     }
 
     private void loadTitleBarIcon() {
@@ -212,6 +229,23 @@ public class MainController {
             stage.widthProperty().addListener((obs, oldValue, newValue) -> updateWindowChromeStateDeferred());
             stage.heightProperty().addListener((obs, oldValue, newValue) -> updateWindowChromeStateDeferred());
             updateWindowChromeStateDeferred();
+        }
+    }
+
+    public void setUpdateService(com.example.chatbot.update.UpdateService service) {
+        this.updateService = service;
+    }
+
+    private void checkForUpdatesAfterThemeApplied() {
+        if (updateService != null && stage != null) {
+            updateService.checkForUpdates(stage);
+        }
+    }
+
+    private void updateUpdateServiceTheme() {
+        if (updateService != null && activeThemeStylesheet != null) {
+            String modeClass = THEME_MODE.getOrDefault(committedThemeKey, "theme-dark");
+            updateService.setActiveTheme(activeThemeStylesheet, modeClass);
         }
     }
 
@@ -905,6 +939,141 @@ public class MainController {
         }
     }
 
+    // ================= EXTERNAL LOGIN (OAuth-style) =================
+    private void startExternalLogin(Stage dialog, Label feedbackLabel, Button loginButton) {
+        CompletableFuture.runAsync(() -> {
+            final HttpServer[] serverHolder = new HttpServer[1];
+            try {
+                serverHolder[0] = HttpServer.create(new InetSocketAddress(0), 0);
+                serverHolder[0].setExecutor(Executors.newSingleThreadExecutor());
+                String callbackPath = "/oauth-callback";
+                serverHolder[0].createContext(callbackPath, (HttpExchange exchange) -> {
+                    try {
+                        String query = exchange.getRequestURI().getQuery();
+                        Map<String, String> params = parseQuery(query);
+                        String token = params.getOrDefault("token", "");
+                        String code = params.getOrDefault("code", "");
+                        String error = params.getOrDefault("error", "");
+
+                        String html = "<html><body><h3>Sign-in complete. You may close this window and return to Altarix.</h3></body></html>";
+                        exchange.getResponseHeaders().add("Content-Type", "text/html; charset=utf-8");
+                        exchange.sendResponseHeaders(200, html.getBytes(StandardCharsets.UTF_8).length);
+                        try (OutputStream os = exchange.getResponseBody()) {
+                            os.write(html.getBytes(StandardCharsets.UTF_8));
+                        }
+
+                        if (error != null && !error.isBlank()) {
+                            Platform.runLater(() -> {
+                                feedbackLabel.setText(error);
+                                if (loginButton != null) loginButton.setDisable(false);
+                            });
+                            return;
+                        }
+
+                        if (token != null && !token.isBlank()) {
+                            handleReturnedAuthToken(dialog, feedbackLabel, loginButton, token);
+                            return;
+                        }
+                        if (code != null && !code.isBlank()) {
+                            handleReturnedAuthCode(dialog, feedbackLabel, loginButton, code);
+                            return;
+                        }
+
+                        Platform.runLater(() -> {
+                            feedbackLabel.setText("Login did not return a valid Altarix session.");
+                            if (loginButton != null) loginButton.setDisable(false);
+                        });
+                    } finally {
+                        exchange.close();
+                        if (serverHolder[0] != null) {
+                            serverHolder[0].stop(0);
+                        }
+                    }
+                });
+
+                serverHolder[0].start();
+                int port = serverHolder[0].getAddress().getPort();
+                String redirect = "http://localhost:" + port + "/oauth-callback";
+                String authorize = authApiClient.getAuthorizeUrl(redirect);
+                if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                    Desktop.getDesktop().browse(URI.create(authorize));
+                    Platform.runLater(() -> feedbackLabel.setText("Complete login in your browser. This dialog will close automatically."));
+                } else {
+                    Platform.runLater(() -> feedbackLabel.setText("Please open: " + authorize));
+                }
+            } catch (IOException ioe) {
+                Platform.runLater(() -> {
+                    feedbackLabel.setText("Unable to start local callback server.");
+                    if (loginButton != null) loginButton.setDisable(false);
+                });
+            }
+        });
+    }
+
+    private void handleReturnedAuthToken(Stage dialog, Label feedbackLabel, Button loginButton, String token) {
+        try {
+            AuthApiClient.AuthResponse me = authApiClient.me(token);
+            if (me.isSuccess() && me.user() != null) {
+                Platform.runLater(() -> {
+                    applyAuthenticatedUser(me.user(), token);
+                    refreshProfileMenuState();
+                    if (dialog != null) dialog.close();
+                });
+                return;
+            }
+            Platform.runLater(() -> {
+                feedbackLabel.setText(me.message());
+                if (loginButton != null) loginButton.setDisable(false);
+            });
+        } catch (Exception ex) {
+            Platform.runLater(() -> {
+                feedbackLabel.setText(buildAuthErrorMessage(ex));
+                if (loginButton != null) loginButton.setDisable(false);
+            });
+        }
+    }
+
+    private void handleReturnedAuthCode(Stage dialog, Label feedbackLabel, Button loginButton, String code) {
+        try {
+            AuthApiClient.AuthResponse exchangeResp = authApiClient.exchangeCode(code);
+            if (exchangeResp != null && exchangeResp.isSuccess() && exchangeResp.token() != null && !exchangeResp.token().isBlank()) {
+                handleReturnedAuthToken(dialog, feedbackLabel, loginButton, exchangeResp.token());
+                return;
+            }
+            Platform.runLater(() -> {
+                feedbackLabel.setText(exchangeResp == null ? "Login failed." : exchangeResp.message());
+                if (loginButton != null) loginButton.setDisable(false);
+            });
+        } catch (Exception ex) {
+            Platform.runLater(() -> {
+                feedbackLabel.setText(buildAuthErrorMessage(ex));
+                if (loginButton != null) loginButton.setDisable(false);
+            });
+        }
+    }
+
+    private Map<String, String> parseQuery(String query) {
+        Map<String, String> map = new HashMap<>();
+        if (query == null || query.isBlank()) return map;
+        String[] parts = query.split("&");
+        for (String p : parts) {
+            int idx = p.indexOf('=');
+            try {
+                if (idx >= 0) {
+                    String k = URLDecoder.decode(p.substring(0, idx), StandardCharsets.UTF_8);
+                    String v = URLDecoder.decode(p.substring(idx + 1), StandardCharsets.UTF_8);
+                    map.put(k, v);
+                } else {
+                    String k = URLDecoder.decode(p, StandardCharsets.UTF_8);
+                    map.put(k, "");
+                }
+            } catch (Exception ex) {
+                // ignore malformed
+            }
+        }
+        return map;
+    }
+
     // ================= DIALOG HELPER =================
     private javafx.stage.Stage createStyledDialog(String title, javafx.scene.Parent content, double width, double height, javafx.stage.Stage owner) {
         javafx.stage.Stage dialog = new javafx.stage.Stage();
@@ -961,48 +1130,9 @@ public class MainController {
         Label titleLabel = new Label("Welcome to Altarix");
         titleLabel.getStyleClass().add("logout-confirm-title");
 
-        Label subtitleLabel = new Label("Log in to your account or create one to continue with your saved profile.");
+        Label subtitleLabel = new Label("Use your Altarix account in the browser. After login, you will return to the app automatically.");
         subtitleLabel.getStyleClass().add("logout-confirm-message");
         subtitleLabel.setWrapText(true);
-
-        Button loginTab = new Button("Login");
-        loginTab.getStyleClass().add("profile-edit-button");
-
-        Button signupTab = new Button("Sign Up");
-        signupTab.getStyleClass().add("logout-confirm-no");
-
-        HBox tabRow = new HBox(10, loginTab, signupTab);
-        tabRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-
-        javafx.scene.control.TextField nameField = new javafx.scene.control.TextField();
-        nameField.setPromptText("Full name");
-        nameField.getStyleClass().add("profile-edit-field");
-
-        javafx.scene.control.TextField usernameField = new javafx.scene.control.TextField(
-            settingsManager.getString("auth.accountUsername", "")
-        );
-        usernameField.setPromptText("Username");
-        usernameField.getStyleClass().add("profile-edit-field");
-
-        javafx.scene.control.TextField emailField = new javafx.scene.control.TextField(
-            settingsManager.getString("auth.accountEmail", "")
-        );
-        emailField.setPromptText("Email");
-        emailField.getStyleClass().add("profile-edit-field");
-
-        javafx.scene.control.TextField identifierField = new javafx.scene.control.TextField(
-            settingsManager.getString("auth.accountEmail", "")
-        );
-        identifierField.setPromptText("Email or username");
-        identifierField.getStyleClass().add("profile-edit-field");
-
-        javafx.scene.control.PasswordField passwordField = new javafx.scene.control.PasswordField();
-        passwordField.setPromptText("Password");
-        passwordField.getStyleClass().add("profile-edit-field");
-
-        javafx.scene.control.PasswordField confirmPasswordField = new javafx.scene.control.PasswordField();
-        confirmPasswordField.setPromptText("Confirm password");
-        confirmPasswordField.getStyleClass().add("profile-edit-field");
 
         Label feedbackLabel = new Label();
         feedbackLabel.getStyleClass().add("logout-confirm-message");
@@ -1010,147 +1140,31 @@ public class MainController {
         feedbackLabel.setVisible(false);
         feedbackLabel.setManaged(false);
 
-        Button primaryActionButton = new Button("Login");
-        primaryActionButton.getStyleClass().add("profile-edit-button");
-
-        final boolean[] signupMode = {false};
+        Button loginButton = new Button("Login with Altarix");
+        loginButton.getStyleClass().add("profile-edit-button");
+        loginButton.setMaxWidth(Double.MAX_VALUE);
 
         VBox content = new VBox(
             12,
             titleLabel,
             subtitleLabel,
-            tabRow,
-            nameField,
-            usernameField,
-            emailField,
-            identifierField,
-            passwordField,
-            confirmPasswordField,
             feedbackLabel,
-            primaryActionButton
+            loginButton
         );
         content.getStyleClass().add("profile-panel-root");
         content.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         content.setPadding(new javafx.geometry.Insets(22, 28, 22, 28));
 
-        javafx.stage.Stage dialog = createStyledDialog("Account Access", content, 400, 390, null);
+        javafx.stage.Stage dialog = createStyledDialog("Account Access", content, 420, 240, null);
 
-        Runnable syncMode = () -> {
-            boolean inSignupMode = signupMode[0];
-            nameField.setManaged(inSignupMode);
-            nameField.setVisible(inSignupMode);
-            usernameField.setManaged(inSignupMode);
-            usernameField.setVisible(inSignupMode);
-            emailField.setManaged(inSignupMode);
-            emailField.setVisible(inSignupMode);
-            identifierField.setManaged(!inSignupMode);
-            identifierField.setVisible(!inSignupMode);
-            confirmPasswordField.setManaged(inSignupMode);
-            confirmPasswordField.setVisible(inSignupMode);
-            primaryActionButton.setText(inSignupMode ? "Create Account" : "Login");
-            loginTab.getStyleClass().setAll(inSignupMode ? "logout-confirm-no" : "profile-edit-button");
-            signupTab.getStyleClass().setAll(inSignupMode ? "profile-edit-button" : "logout-confirm-no");
-            feedbackLabel.setVisible(false);
-            feedbackLabel.setManaged(false);
-        };
-
-        loginTab.setOnAction(e -> {
-            signupMode[0] = false;
-            syncMode.run();
-        });
-        signupTab.setOnAction(e -> {
-            signupMode[0] = true;
-            syncMode.run();
-        });
-
-        primaryActionButton.setOnAction(e -> {
-            String name = nameField.getText() == null ? "" : nameField.getText().trim();
-            String username = usernameField.getText() == null ? "" : usernameField.getText().trim();
-            String email = emailField.getText() == null ? "" : emailField.getText().trim();
-            String identifier = identifierField.getText() == null ? "" : identifierField.getText().trim();
-            String password = passwordField.getText() == null ? "" : passwordField.getText();
-            String confirmPassword = confirmPasswordField.getText() == null ? "" : confirmPasswordField.getText();
-
+        loginButton.setOnAction(e -> {
+            loginButton.setDisable(true);
             feedbackLabel.setVisible(true);
             feedbackLabel.setManaged(true);
-
-            if (signupMode[0]) {
-                if (name.isBlank()) {
-                    feedbackLabel.setText("Name is required to create an account.");
-                    return;
-                }
-                if (username.isBlank()) {
-                    feedbackLabel.setText("Username is required to create an account.");
-                    return;
-                }
-                if (email.isBlank() || password.isBlank()) {
-                    feedbackLabel.setText("Email and password are required.");
-                    return;
-                }
-                if (!password.equals(confirmPassword)) {
-                    feedbackLabel.setText("Passwords do not match.");
-                    return;
-                }
-
-                primaryActionButton.setDisable(true);
-                feedbackLabel.setText("Creating your account...");
-                CompletableFuture
-                    .supplyAsync(() -> {
-                        try {
-                            return authApiClient.signup(name, username, email, password);
-                        } catch (Exception ex) {
-                            throw new RuntimeException(ex);
-                        }
-                    })
-                    .whenComplete((response, throwable) -> Platform.runLater(() -> {
-                        primaryActionButton.setDisable(false);
-                        if (throwable != null) {
-                            feedbackLabel.setText(buildAuthErrorMessage(throwable));
-                            return;
-                        }
-                        if (!response.isSuccess() || response.user() == null || response.token().isBlank()) {
-                            feedbackLabel.setText(response.message());
-                            return;
-                        }
-                        applyAuthenticatedUser(response.user(), response.token());
-                        refreshProfileMenuState();
-                        dialog.close();
-                    }));
-                return;
-            }
-
-            if (identifier.isBlank() || password.isBlank()) {
-                feedbackLabel.setText("Email/username and password are required.");
-                return;
-            }
-
-            primaryActionButton.setDisable(true);
-            feedbackLabel.setText("Signing you in...");
-            CompletableFuture
-                .supplyAsync(() -> {
-                    try {
-                        return authApiClient.login(identifier, password);
-                    } catch (Exception ex) {
-                        throw new RuntimeException(ex);
-                    }
-                })
-                .whenComplete((response, throwable) -> Platform.runLater(() -> {
-                    primaryActionButton.setDisable(false);
-                    if (throwable != null) {
-                        feedbackLabel.setText(buildAuthErrorMessage(throwable));
-                        return;
-                    }
-                    if (!response.isSuccess() || response.user() == null || response.token().isBlank()) {
-                        feedbackLabel.setText(response.message());
-                        return;
-                    }
-                    applyAuthenticatedUser(response.user(), response.token());
-                    refreshProfileMenuState();
-                    dialog.close();
-                }));
+            feedbackLabel.setText("Opening Altarix in your browser...");
+            startExternalLogin(dialog, feedbackLabel, loginButton);
         });
 
-        syncMode.run();
         showDialogWithBackdrop(dialog);
     }
 
@@ -1431,6 +1445,9 @@ public class MainController {
         }
         windowRoot.getScene().getStylesheets().add(stylesheet);
         activeThemeStylesheet = stylesheet;
+
+        // Update the UpdateService with the new active theme
+        updateUpdateServiceTheme();
     }
 }
 

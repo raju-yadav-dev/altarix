@@ -60,16 +60,16 @@ public class MainApp extends Application {
         primaryStage.setMinWidth(minWidth);
         primaryStage.setMinHeight(minHeight);
 
+        // ---- Create UpdateService (will be configured by controller) ----
+        UpdateService updateService = new UpdateService();
+
         // ---- Connect Controller + Enable Border Resize ----
         controller.setStage(primaryStage);
+        controller.setUpdateService(updateService);
         enableResize(primaryStage, scene);
 
         // ---- Show Window ----
         primaryStage.show();
-
-        // ---- Check for updates after the UI is visible ----
-        UpdateService updateService = new UpdateService();
-        updateService.checkForUpdates(primaryStage);
     }
 
     // ================= CUSTOM WINDOW RESIZE =================

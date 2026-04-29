@@ -1935,17 +1935,30 @@
 
 /* ================= UPDATE DIALOG ================= */
 .update-dialog-root {
-    -fx-background-color: rgba(15, 23, 42, 0.65);
-    -fx-padding: 18;
+    -fx-background-color: -app-bg;
+    -fx-background-radius: 16;
+    -fx-border-radius: 16;
+    -fx-border-color: -app-border;
+    -fx-border-width: 1;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.38), 22, 0.18, 0, 8);
+}
+
+.update-dialog-title-bar {
+    -fx-background-color: -app-surface;
+    -fx-background-radius: 16 16 0 0;
+    -fx-border-color: -app-border;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 10 14;
+}
+
+.update-dialog-window-title {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 13px;
+    -fx-font-weight: 700;
 }
 
 .update-dialog-card {
-    -fx-background-color: -app-surface-elevated;
-    -fx-border-color: -app-border;
-    -fx-border-width: 1;
-    -fx-border-radius: 12;
-    -fx-background-radius: 12;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 18, 0.2, 0, 6);
+    -fx-background-color: transparent;
 }
 
 .update-dialog-title {
@@ -1954,6 +1967,7 @@
     -fx-font-weight: 700;
 }
 
+.update-dialog-meta,
 .update-dialog-status {
     -fx-text-fill: -app-text-secondary;
     -fx-font-size: 12px;
@@ -1965,19 +1979,37 @@
     -fx-font-weight: 600;
 }
 
-.update-dialog-notes {
-    -fx-background-color: rgba(15, 23, 42, 0.4);
-    -fx-control-inner-background: rgba(15, 23, 42, 0.4);
+.update-dialog-root .update-dialog-notes {
+    -fx-background-color: -app-surface;
+    -fx-control-inner-background: -app-surface;
     -fx-text-fill: -app-text-primary;
     -fx-prompt-text-fill: -app-text-secondary;
     -fx-border-color: -app-border;
+    -fx-border-width: 1;
     -fx-border-radius: 8;
     -fx-background-radius: 8;
+    -fx-background-insets: 0;
     -fx-font-size: 12px;
+    -fx-padding: 8;
+    -fx-effect: none;
+}
+
+.update-dialog-root .update-dialog-notes .content,
+.update-dialog-root .update-dialog-notes .viewport,
+.update-dialog-root .update-dialog-notes .scroll-pane,
+.update-dialog-root .update-dialog-notes .scroll-pane .content {
+    -fx-background-color: -app-surface;
+    -fx-background-insets: 0;
+}
+
+.update-dialog-root .update-dialog-notes:focused {
+    -fx-background-color: -app-surface;
+    -fx-border-color: -app-focus-ring;
+    -fx-effect: none;
 }
 
 .update-dialog-mandatory {
-    -fx-text-fill: -app-warning;
+    -fx-text-fill: #f59e0b;
     -fx-font-size: 12px;
     -fx-font-weight: 600;
     -fx-background-color: rgba(245, 158, 11, 0.15);
@@ -1987,23 +2019,67 @@
     -fx-padding: 4 10;
 }
 
-.update-dialog-actions .button {
+.update-dialog-root .progress-bar {
+    -fx-pref-height: 10;
+}
+
+.update-dialog-root .progress-bar > .track {
+    -fx-background-color: -app-surface;
+    -fx-background-insets: 0;
+    -fx-background-radius: 999;
+    -fx-border-color: -app-border;
+    -fx-border-width: 1;
+    -fx-border-radius: 999;
+}
+
+.update-dialog-root .progress-bar > .bar {
     -fx-background-color: -app-accent;
-    -fx-text-fill: -app-text-primary;
+    -fx-background-insets: 1;
+    -fx-background-radius: 999;
+}
+
+.update-dialog-root .update-dialog-actions .button,
+.update-dialog-root .update-dialog-close-button {
     -fx-background-radius: 999;
     -fx-border-radius: 999;
     -fx-font-weight: 600;
-    -fx-padding: 6 16;
+    -fx-cursor: hand;
 }
 
-.update-dialog-actions .button:focused {
+.update-dialog-root .update-dialog-actions .button {
+    -fx-padding: 7 16;
+}
+
+.update-dialog-root .update-dialog-actions .button.update-dialog-primary-button {
+    -fx-background-color: -app-accent;
     -fx-border-color: -app-accent;
+    -fx-text-fill: #ffffff;
 }
 
-.update-dialog-actions .button:first-child {
+.update-dialog-root .update-dialog-actions .button.update-dialog-primary-button:hover {
+    -fx-background-color: -app-accent-hover;
+    -fx-border-color: -app-accent-hover;
+}
+
+.update-dialog-root .update-dialog-actions .button.update-dialog-primary-button:pressed {
+    -fx-background-color: -app-accent-pressed;
+    -fx-border-color: -app-accent-pressed;
+}
+
+.update-dialog-root .update-dialog-actions .button.update-dialog-secondary-button {
     -fx-background-color: transparent;
     -fx-border-color: -app-border;
     -fx-text-fill: -app-text-secondary;
+}
+
+.update-dialog-root .update-dialog-actions .button.update-dialog-secondary-button:hover {
+    -fx-background-color: -app-muted-hover;
+    -fx-text-fill: -app-text-primary;
+}
+
+.update-dialog-root .update-dialog-actions .button:focused,
+.update-dialog-root .update-dialog-close-button:focused {
+    -fx-border-color: -app-focus-ring;
 }
 
 .chat-split-pane {

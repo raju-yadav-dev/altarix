@@ -14,21 +14,52 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.net.URLEncoder;
 import java.util.Properties;
 
 public final class AuthApiClient {
     private static final String APP_PROPERTIES_FILE = "app.properties";
-    private static final String DEFAULT_API_BASE_URL = "http://localhost:3000";
+    private static final String DEFAULT_API_BASE_URL = "https://altarix.vercel.app";
+    private static final String DEFAULT_AUTHORIZE_PATH = "/login.html";
     private static final Gson GSON = new Gson();
 
     private final HttpClient httpClient;
     private final String apiBaseUrl;
+    private final String authorizePath;
 
     public AuthApiClient() {
         this.httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
         this.apiBaseUrl = resolveApiBaseUrl();
+        this.authorizePath = resolveAuthorizePath();
+    }
+
+    private String resolveAuthorizePath() {
+        Properties properties = new Properties();
+        Path externalPath = Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize().resolve(APP_PROPERTIES_FILE);
+        if (loadProperties(properties, externalPath)) {
+            return normalizeAuthorizePath(properties.getProperty("auth_authorize_path", DEFAULT_AUTHORIZE_PATH));
+        }
+
+        try (InputStream input = AuthApiClient.class.getResourceAsStream("/" + APP_PROPERTIES_FILE)) {
+            if (input != null) {
+                properties.load(input);
+                return normalizeAuthorizePath(properties.getProperty("auth_authorize_path", DEFAULT_AUTHORIZE_PATH));
+            }
+        } catch (IOException ignored) {
+            // fall through
+        }
+
+        return DEFAULT_AUTHORIZE_PATH;
+    }
+
+    private String normalizeAuthorizePath(String path) {
+        if (path == null) return DEFAULT_AUTHORIZE_PATH;
+        String p = path.trim();
+        if (p.isEmpty()) return DEFAULT_AUTHORIZE_PATH;
+        if (!p.startsWith("/")) p = "/" + p;
+        return p;
     }
 
     public AuthResponse signup(String name, String username, String email, String password) throws IOException, InterruptedException {
@@ -51,6 +82,17 @@ public final class AuthApiClient {
         return sendJsonRequest("/api/auth/logout", "POST", null, token);
     }
 
+    public AuthResponse me(String token) throws IOException, InterruptedException {
+        return sendJsonRequest("/api/auth/me", "GET", null, token);
+    }
+
+    public AuthResponse exchangeCode(String code) throws IOException, InterruptedException {
+        if (code == null) return new AuthResponse(400, "Invalid code", "", null);
+        com.google.gson.JsonObject payload = new com.google.gson.JsonObject();
+        payload.addProperty("code", code);
+        return sendJsonRequest("/api/auth/exchange", "POST", payload, null);
+    }
+
     public AuthResponse updateProfile(String token, String name, String username, String bio) throws IOException, InterruptedException {
         JsonObject payload = new JsonObject();
         payload.addProperty("name", name);
@@ -61,6 +103,16 @@ public final class AuthApiClient {
 
     public String getApiBaseUrl() {
         return apiBaseUrl;
+    }
+
+    public String getAuthorizeUrl(String redirect) {
+        try {
+            String path = authorizePath == null ? DEFAULT_AUTHORIZE_PATH : authorizePath;
+            String sep = path.contains("?") ? "&" : "?";
+            return apiBaseUrl + path + sep + "redirect=" + URLEncoder.encode(redirect, StandardCharsets.UTF_8);
+        } catch (Exception ex) {
+            return apiBaseUrl + DEFAULT_AUTHORIZE_PATH + "?redirect=" + redirect;
+        }
     }
 
     private AuthResponse sendJsonRequest(String path, String method, JsonObject payload, String bearerToken)

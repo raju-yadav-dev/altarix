@@ -3,24 +3,21 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 
-<StackPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.chatbot.update.UpdateDialogController" styleClass="update-dialog-root">
-    <children>
-        <VBox styleClass="update-dialog-card" spacing="14">
-            <padding>
-                <Insets top="18" right="20" bottom="18" left="20" />
-            </padding>
-            <Label text="Update Available" styleClass="update-dialog-title" />
-            <Label fx:id="currentVersionLabel" text="Current version: --" />
-            <Label fx:id="newVersionLabel" text="New version: --" />
-            <Label fx:id="mandatoryLabel" text="" styleClass="update-dialog-mandatory" />
-            <Label text="Release notes" styleClass="update-dialog-section" />
-            <TextArea fx:id="releaseNotesArea" editable="false" wrapText="true" prefRowCount="6" styleClass="update-dialog-notes" />
-            <Label fx:id="statusLabel" text="Ready to download." styleClass="update-dialog-status" />
-            <ProgressBar fx:id="downloadProgress" prefWidth="320" />
-            <HBox spacing="10" alignment="CENTER_RIGHT" styleClass="update-dialog-actions">
-                <Button fx:id="laterButton" text="Later" onAction="#onLater" />
-                <Button fx:id="updateButton" text="Update Now" onAction="#onUpdateNow" />
-            </HBox>
-        </VBox>
-    </children>
-</StackPane>
+<VBox xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.chatbot.update.UpdateDialogController" styleClass="update-dialog-card" spacing="14">
+    <padding>
+        <Insets top="18" right="20" bottom="18" left="20" />
+    </padding>
+    <Label text="Update Available" styleClass="update-dialog-title" />
+    <Label fx:id="currentVersionLabel" text="Current version: --" styleClass="update-dialog-meta" />
+    <Label fx:id="newVersionLabel" text="New version: --" styleClass="update-dialog-meta" />
+    <Label fx:id="mandatoryLabel" text="" styleClass="update-dialog-mandatory" />
+    <Label text="Release notes" styleClass="update-dialog-section" />
+    <TextArea fx:id="releaseNotesArea" editable="false" wrapText="true" prefRowCount="6" styleClass="update-dialog-notes" />
+    <Label fx:id="sizeLabel" text="Size: --" styleClass="update-dialog-meta" />
+    <Label fx:id="statusLabel" text="Ready to download." styleClass="update-dialog-status" />
+    <ProgressBar fx:id="downloadProgress" prefWidth="320" styleClass="update-dialog-progress" />
+    <HBox spacing="10" alignment="CENTER_RIGHT" styleClass="update-dialog-actions">
+        <Button fx:id="laterButton" text="Later" onAction="#onLater" styleClass="update-dialog-secondary-button" />
+        <Button fx:id="updateButton" text="Update Now" onAction="#onUpdateNow" styleClass="update-dialog-primary-button" />
+    </HBox>
+</VBox>

@@ -21,6 +21,8 @@ public class UpdateDialogController {
     @FXML
     private Label statusLabel;
     @FXML
+    private Label sizeLabel;
+    @FXML
     private Label mandatoryLabel;
     @FXML
     private TextArea releaseNotesArea;
@@ -47,6 +49,7 @@ public class UpdateDialogController {
         releaseNotesArea.setText(notes.isEmpty() ? "No release notes provided." : notes);
         statusLabel.setText("Ready to download.");
         downloadProgress.setProgress(0);
+        sizeLabel.setText("Size: --");
 
         if (info.isMandatory()) {
             mandatoryLabel.setText("This update is required to continue.");
@@ -102,6 +105,10 @@ public class UpdateDialogController {
         }
     }
 
+    public void requestClose() {
+        onLater();
+    }
+
     private void updateProgress(long downloaded, long total) {
         Platform.runLater(() -> {
             if (total > 0) {
@@ -112,6 +119,23 @@ public class UpdateDialogController {
                 downloadProgress.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
                 statusLabel.setText("Downloading...");
             }
+        });
+    }
+
+    public void setDownloadSize(long bytes) {
+        Platform.runLater(() -> {
+            if (bytes <= 0) {
+                sizeLabel.setText("Size: Unknown");
+                return;
+            }
+            String human;
+            double value = bytes;
+            String unit = "B";
+            if (value >= 1024) { value /= 1024; unit = "KB"; }
+            if (value >= 1024) { value /= 1024; unit = "MB"; }
+            if (value >= 1024) { value /= 1024; unit = "GB"; }
+            human = String.format("%s %s", value >= 10 ? String.format("%.0f", value) : String.format("%.1f", value), unit);
+            sizeLabel.setText("Size: " + human);
         });
     }
 
