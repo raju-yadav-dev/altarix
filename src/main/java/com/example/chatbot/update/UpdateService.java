@@ -48,18 +48,20 @@ public final class UpdateService {
         this.activeThemeMode = themeMode;
     }
 
-    public void checkForUpdates(Stage owner) {
-        CompletableFuture
+    public CompletableFuture<UpdateCheckResult> checkForUpdates(Stage owner) {
+        return CompletableFuture
             .supplyAsync(this::fetchLatestUpdate)
-            .thenAccept(update -> {
-                if (update == null || !update.isValid()) return;
-                if (!VersionUtil.isNewer(CURRENT_VERSION, update.getVersion())) return;
+            .thenApply(update -> {
+                if (update == null || !update.isValid()) {
+                    return UpdateCheckResult.UNAVAILABLE;
+                }
+                if (!VersionUtil.isNewer(CURRENT_VERSION, update.getVersion())) {
+                    return UpdateCheckResult.UP_TO_DATE;
+                }
                 Platform.runLater(() -> showUpdateDialog(owner, update));
+                return UpdateCheckResult.UPDATE_AVAILABLE;
             })
-            .exceptionally(error -> {
-                // Keep startup smooth even if update check fails.
-                return null;
-            });
+            .exceptionally(error -> UpdateCheckResult.UNAVAILABLE);
     }
 
     private UpdateInfo fetchLatestUpdate() {
@@ -291,5 +293,11 @@ public final class UpdateService {
         new ProcessBuilder(installerPath.toString()).start();
         Platform.exit();
         System.exit(0);
+    }
+
+    public enum UpdateCheckResult {
+        UPDATE_AVAILABLE,
+        UP_TO_DATE,
+        UNAVAILABLE
     }
 }

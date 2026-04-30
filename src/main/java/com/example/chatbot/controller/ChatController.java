@@ -3021,10 +3021,10 @@ public class ChatController {
         }
         button.setGraphic(null);
         button.setText(switch (position) {
-            case LEFT -> "â†";
-            case RIGHT -> "â†’";
-            case TOP -> "â†‘";
-            case BOTTOM -> "â†“";
+            case LEFT -> "<";
+            case RIGHT -> ">";
+            case TOP -> "^";
+            case BOTTOM -> "v";
         });
     }
 

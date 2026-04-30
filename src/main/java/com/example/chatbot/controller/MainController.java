@@ -237,6 +237,9 @@ public class MainController {
     }
 
     private void checkForUpdatesAfterThemeApplied() {
+        if (!settingsManager.getBoolean("advanced.autoCheckUpdatesOnStartup", true)) {
+            return;
+        }
         if (updateService != null && stage != null) {
             updateService.checkForUpdates(stage);
         }
@@ -1397,7 +1400,14 @@ public class MainController {
     // ================= ABOUT DIALOG =================
     @FXML
     private void openAbout() {
-        VBox content = AboutSectionView.createAboutContent(null);
+        VBox content = AboutSectionView.createAboutContent(() -> {
+            if (updateService == null) {
+                return java.util.concurrent.CompletableFuture.completedFuture(
+                    com.example.chatbot.update.UpdateService.UpdateCheckResult.UNAVAILABLE
+                );
+            }
+            return updateService.checkForUpdates(stage);
+        });
 
         javafx.stage.Stage dialog = createStyledDialog("About Altarix", content, 360, 260, null);
         showDialogWithBackdrop(dialog);

@@ -756,6 +756,11 @@ public class SettingsDialogController {
     // ================= ADVANCED =================
     private VBox buildAdvancedPage() {
         VBox page = createPage("Advanced");
+        page.getChildren().add(createToggleRow(
+            "Check for updates when Altarix opens",
+            "advanced.autoCheckUpdatesOnStartup",
+            settings.getBoolean("advanced.autoCheckUpdatesOnStartup", true)
+        ));
         page.getChildren().add(createToggleRow("Enable debug logs", "advanced.debugLogs", settings.getBoolean("advanced.debugLogs", false)));
         page.getChildren().add(createToggleRow("Enable experimental features", "advanced.experimentalFeatures", settings.getBoolean("advanced.experimentalFeatures", false)));
         return page;

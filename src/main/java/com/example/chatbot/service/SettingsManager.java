@@ -126,6 +126,7 @@ public final class SettingsManager {
         // Advanced
         putDefault("advanced.debugLogs", false);
         putDefault("advanced.experimentalFeatures", false);
+        putDefault("advanced.autoCheckUpdatesOnStartup", true);
     }
 
     private void putDefault(String key, Object value) {

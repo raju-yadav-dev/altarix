@@ -26,7 +26,7 @@ import java.util.stream.Stream;
  */
 public class CodeExecutionService {
 
-    private static final String SEPARATOR = "â”â”â”â”â”â”â”â”";
+    private static final String SEPARATOR = "========";
     private static final Pattern PUBLIC_CLASS_PATTERN = Pattern.compile("\\bpublic\\s+class\\s+([A-Za-z_$][\\w$]*)\\b");
     private static final Pattern CLASS_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_$][\\w$]*)\\b");
 

@@ -2117,8 +2117,8 @@
 }
 
 .terminal-dock-button {
-    -fx-min-width: 24;
-    -fx-pref-width: 24;
+    -fx-min-width: 22;
+    -fx-pref-width: 22;
     -fx-min-height: 22;
     -fx-pref-height: 22;
     -fx-padding: 0;
@@ -2185,11 +2185,13 @@
     -fx-font-size: 12px;
     -fx-font-weight: 700;
     -fx-text-fill: -app-text-primary;
+    -fx-min-width: 58;
 }
 
 .terminal-status {
     -fx-font-size: 11px;
     -fx-text-fill: -app-text-secondary;
+    -fx-max-width: 96;
 }
 
 .terminal-clear-button {
