@@ -1,5 +1,7 @@
 package com.aicodehelper.util;
 
+import com.example.chatbot.update.VersionProperties;
+
 /**
  * Application-wide configuration and constants.
  * Centralizes all magic numbers, strings, and settings for easy maintenance.
@@ -14,7 +16,7 @@ public final class AppConfig {
 
     // ========== APPLICATION METADATA ==========
     public static final String APP_NAME = "Altarix";
-    public static final String APP_VERSION = "1.0.0";
+    public static final String APP_VERSION = VersionProperties.getCurrentVersion();
     public static final String APP_DESCRIPTION = "AI-powered coding assistant for beginners";
 
     // ========== WINDOW CONFIGURATION ==========

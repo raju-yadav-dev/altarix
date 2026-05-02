@@ -70,6 +70,7 @@ public class MainController {
         Map.entry("theme-dark-purple", "/styles/themes/dark/dark-purple.css"),
         Map.entry("theme-dark-green", "/styles/themes/dark/dark-green.css"),
         Map.entry("theme-dark-ocean", "/styles/themes/dark/dark-ocean.css"),
+        Map.entry("theme-dark-web", "/styles/themes/dark/dark-web.css"),
         Map.entry("theme-dark-ember", "/styles/themes/dark/dark-ember.css"),
         Map.entry("theme-dark-slate", "/styles/themes/dark/dark-slate.css"),
         Map.entry("theme-light", "/styles/themes/light/light.css"),
@@ -83,6 +84,7 @@ public class MainController {
         Map.entry("theme-dark-purple", "theme-dark"),
         Map.entry("theme-dark-green", "theme-dark"),
         Map.entry("theme-dark-ocean", "theme-dark"),
+        Map.entry("theme-dark-web", "theme-dark"),
         Map.entry("theme-dark-ember", "theme-dark"),
         Map.entry("theme-dark-slate", "theme-dark"),
         Map.entry("theme-light", "theme-light"),
@@ -129,6 +131,8 @@ public class MainController {
     private RadioMenuItem themeDarkGreenItem;
     @FXML
     private RadioMenuItem themeDarkOceanItem;
+    @FXML
+    private RadioMenuItem themeDarkWebItem;
     @FXML
     private RadioMenuItem themeDarkEmberItem;
     @FXML
@@ -683,6 +687,7 @@ public class MainController {
         themeMenuBindings.put(themeDarkPurpleItem, "theme-dark-purple");
         themeMenuBindings.put(themeDarkGreenItem, "theme-dark-green");
         themeMenuBindings.put(themeDarkOceanItem, "theme-dark-ocean");
+        themeMenuBindings.put(themeDarkWebItem, "theme-dark-web");
         themeMenuBindings.put(themeDarkEmberItem, "theme-dark-ember");
         themeMenuBindings.put(themeDarkSlateItem, "theme-dark-slate");
         themeMenuBindings.put(themeLightItem, "theme-light");

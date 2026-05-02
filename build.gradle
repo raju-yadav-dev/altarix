@@ -29,6 +29,9 @@ def java25Metadata = javaToolchains.launcherFor {
 
 application {
     mainClass = 'com.example.chatbot.AltarixLauncher'
+    applicationDefaultJvmArgs = [
+        '--enable-native-access=javafx.graphics,javafx.web'
+    ]
 }
 
 dependencies {
@@ -50,7 +53,8 @@ dependencies {
 run {
     jvmArgs = [
         '--module-path', configurations.runtimeClasspath.asPath,
-        '--add-modules', 'javafx.base,javafx.graphics,javafx.controls,javafx.fxml,javafx.web,javafx.media'
+        '--add-modules', 'javafx.base,javafx.graphics,javafx.controls,javafx.fxml,javafx.web,javafx.media',
+        '--enable-native-access=javafx.graphics,javafx.web'
     ]
 }
 
@@ -125,6 +129,7 @@ def windowsInstallerArgs = { String installerType ->
         '--dest', installerOutputDir.get().asFile.absolutePath,
         '--app-version', appVersion,
         '--vendor', vendorName,
+        '--java-options', '--enable-native-access=javafx.graphics,javafx.web',
         '--icon', windowsIconFile.absolutePath,
         '--win-menu',
         '--win-shortcut',
@@ -141,6 +146,7 @@ def linuxInstallerArgs = { String installerType ->
         '--dest', installerOutputDir.get().asFile.absolutePath,
         '--app-version', appVersion,
         '--vendor', vendorName,
+        '--java-options', '--enable-native-access=javafx.graphics,javafx.web',
         '--icon', linuxIconFile.absolutePath,
         '--linux-shortcut'
     ]
@@ -154,7 +160,8 @@ def macInstallerArgs = { String installerType ->
         '--type', installerType,
         '--dest', installerOutputDir.get().asFile.absolutePath,
         '--app-version', appVersion,
-        '--vendor', vendorName
+        '--vendor', vendorName,
+        '--java-options', '--enable-native-access=javafx.graphics,javafx.web'
     ]
     if (macIconFile.exists()) {
         args += ['--icon', macIconFile.absolutePath]

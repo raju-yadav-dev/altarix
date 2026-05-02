@@ -1,0 +1,157 @@
+/* ============================================================================ */
+/* Altarix - DARK WEB THEME (Matches altarix-web) */
+/* ============================================================================ */
+
+.window-root.theme-dark {
+    -app-bg: #05080f;
+    -app-surface: #0d1324;
+    -app-surface-elevated: #1a2142;
+    -app-border: rgba(255, 255, 255, 0.16);
+    -app-separator: #000000;
+
+    -app-accent: #2bf5c7;
+    -app-accent-soft: rgba(43, 245, 199, 0.30);
+    -app-accent-hover: #4ff8d3;
+    -app-accent-pressed: #1fd1a8;
+
+    -app-text-primary: #f8fbff;
+    -app-text-secondary: rgba(184, 199, 222, 0.92);
+    -app-text-muted: rgba(184, 199, 222, 0.66);
+
+    -app-muted-hover: rgba(103, 162, 255, 0.20);
+    -app-focus-ring: rgba(43, 245, 199, 0.44);
+}
+
+.window-root.theme-dark .app-shell {
+    -fx-background-color:
+        radial-gradient(radius 140% at 12% 18%, rgba(30, 45, 102, 0.62) 0%, rgba(30, 45, 102, 0) 45%),
+        radial-gradient(radius 120% at 88% 3%, rgba(34, 71, 69, 0.58) 0%, rgba(34, 71, 69, 0) 42%),
+        linear-gradient(to bottom right, #05080f 0%, #0d1324 48%, #1a2142 100%);
+    -fx-border-color: rgba(255, 255, 255, 0.16);
+}
+
+.window-root.theme-dark .sidebar,
+.window-root.theme-dark .title-bar,
+.window-root.theme-dark .bot-bubble,
+.window-root.theme-dark .input-shell,
+.window-root.theme-dark .new-chat-button {
+    -fx-background-color: #0d1324;
+    -fx-border-color: rgba(255, 255, 255, 0.16);
+}
+
+.window-root.theme-dark .chat-history-list .list-cell {
+    -fx-background-color: #141c36;
+    -fx-border-color: rgba(255, 255, 255, 0.16);
+    -fx-text-fill: #f8fbff;
+}
+
+.window-root.theme-dark .chat-history-list .list-cell:filled:hover {
+    -fx-background-color: #1a2242;
+    -fx-border-color: rgba(255, 255, 255, 0.18);
+}
+
+.window-root.theme-dark .chat-history-list .list-cell:filled:selected,
+.window-root.theme-dark .chat-history-list .list-cell:filled:selected:focused {
+    -fx-background-color: #1f2a50;
+    -fx-border-color: rgba(255, 255, 255, 0.2);
+}
+
+.window-root.theme-dark .button,
+.window-root.theme-dark .menu-button {
+    -fx-background-color: #1a2142;
+    -fx-border-color: rgba(255, 255, 255, 0.16);
+    -fx-text-fill: #f8fbff;
+}
+
+.window-root.theme-dark .button:hover,
+.window-root.theme-dark .menu-button:hover {
+    -fx-background-color: #23305e;
+    -fx-border-color: rgba(255, 255, 255, 0.2);
+}
+
+.window-root.theme-dark .button:pressed,
+.window-root.theme-dark .menu-button:showing {
+    -fx-background-color: #1b264d;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+}
+
+.window-root.theme-dark .message-text {
+    -fx-text-fill: #f8fbff;
+}
+
+.window-root.theme-dark .user-bubble {
+    -fx-background-color: #d7fff6;
+    -fx-border-color: rgba(255, 255, 255, 0.22);
+}
+
+.window-root.theme-dark .user-bubble .message-text {
+    -fx-text-fill: #0b1a18;
+}
+
+.window-root.theme-dark .input-shell.input-focused {
+    -fx-border-color: rgba(43, 245, 199, 0.44);
+}
+
+.window-root.theme-dark .send-button {
+    -fx-background-color: rgba(103, 162, 255, 0.22);
+    -fx-border-color: rgba(103, 162, 255, 0.34);
+    -fx-text-fill: #f8fbff;
+}
+
+.window-root.theme-dark .send-button:hover {
+    -fx-background-color: rgba(103, 162, 255, 0.34);
+}
+
+.window-root.theme-dark .send-button:pressed {
+    -fx-background-color: rgba(103, 162, 255, 0.44);
+}
+
+.window-root.theme-dark .conversation-options-button,
+.window-root.theme-light .conversation-options-button {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-background-insets: 0;
+    -fx-effect: null;
+}
+
+.window-root.theme-dark .conversation-options-button:hover,
+.window-root.theme-dark .conversation-options-button:pressed,
+.window-root.theme-dark .conversation-options-button:focused,
+.window-root.theme-dark .conversation-options-button:armed,
+.window-root.theme-light .conversation-options-button:hover,
+.window-root.theme-light .conversation-options-button:pressed,
+.window-root.theme-light .conversation-options-button:focused,
+.window-root.theme-light .conversation-options-button:armed {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-background-insets: 0;
+    -fx-effect: null;
+}
+
+.context-menu {
+    -fx-background-color: #101933;
+    -fx-border-color: rgba(255, 255, 255, 0.18);
+}
+
+.context-menu .menu-item:focused,
+.context-menu .radio-menu-item:focused,
+.context-menu .menu:focused,
+.context-menu .menu:showing {
+    -fx-background-color: rgba(103, 162, 255, 0.2);
+}
+
+.context-menu .menu-item .label,
+.context-menu .radio-menu-item .label,
+.context-menu .menu .label {
+    -fx-text-fill: #f8fbff;
+}
+
+.context-menu .separator .line {
+    -fx-border-color: rgba(255, 255, 255, 0.18);
+}

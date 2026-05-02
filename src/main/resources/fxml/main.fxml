@@ -39,6 +39,7 @@
                                     <RadioMenuItem fx:id="themeDarkPurpleItem" text="Dark Purple (Default Dark)" selected="true" />
                                     <RadioMenuItem fx:id="themeDarkGreenItem" text="Dark Green" />
                                     <RadioMenuItem fx:id="themeDarkOceanItem" text="Dark Ocean" />
+                                    <RadioMenuItem fx:id="themeDarkWebItem" text="Dark Web (Website)" />
                                     <RadioMenuItem fx:id="themeDarkEmberItem" text="Dark Ember" />
                                     <RadioMenuItem fx:id="themeDarkSlateItem" text="Dark Slate" />
                                     <SeparatorMenuItem />
