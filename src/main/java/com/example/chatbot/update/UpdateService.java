@@ -163,7 +163,6 @@ public final class UpdateService {
         closeButton.getStyleClass().add("settings-close-button");
         closeButton.getStyleClass().add("update-dialog-close-button");
         closeButton.setFocusTraversable(false);
-        closeButton.setDisable(update != null && update.isMandatory());
         closeButton.setOnAction(event -> controller.requestClose());
 
         HBox titleBar = new HBox(titleLabel, spacer, closeButton);
@@ -398,6 +397,10 @@ public final class UpdateService {
         } else {
             new ProcessBuilder(installerPath.toAbsolutePath().toString()).start();
         }
+        exitApplication();
+    }
+
+    public void exitApplication() {
         Platform.exit();
         System.exit(0);
     }

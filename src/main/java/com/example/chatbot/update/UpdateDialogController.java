@@ -57,7 +57,10 @@ public class UpdateDialogController {
             mandatoryLabel.setVisible(true);
             laterButton.setDisable(true);
             if (dialogStage != null) {
-                dialogStage.setOnCloseRequest(event -> event.consume());
+                dialogStage.setOnCloseRequest(event -> {
+                    event.consume();
+                    exitAppForMandatoryUpdate();
+                });
             }
             if (!downloadStarted) {
                 downloadStarted = true;
@@ -97,7 +100,7 @@ public class UpdateDialogController {
     @FXML
     private void onLater() {
         if (updateInfo != null && updateInfo.isMandatory()) {
-            statusLabel.setText("This update is mandatory.");
+            exitAppForMandatoryUpdate();
             return;
         }
         if (dialogStage != null) {
@@ -106,7 +109,20 @@ public class UpdateDialogController {
     }
 
     public void requestClose() {
+        if (updateInfo != null && updateInfo.isMandatory()) {
+            exitAppForMandatoryUpdate();
+            return;
+        }
         onLater();
+    }
+
+    private void exitAppForMandatoryUpdate() {
+        if (updateService != null) {
+            updateService.exitApplication();
+            return;
+        }
+        Platform.exit();
+        System.exit(0);
     }
 
     private void updateProgress(long downloaded, long total) {

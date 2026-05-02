@@ -81,6 +81,8 @@ public final class CodeVisualizationDialog {
             "^([A-Za-z_$][\\w$]*(?:\\[[^\\]]+])?)\\s*=\\s*(.+?);?$");
     private static final Pattern CALL_PATTERN = Pattern.compile("\\b([A-Za-z_$][\\w$]*)\\s*\\(([^)]*)\\)");
         private static final Pattern OBJECT_TYPE_PATTERN = Pattern.compile("new\\s+([A-Za-z_$][\\w$]*)");
+    private static final int LARGE_CODE_LINE_THRESHOLD = 140;
+    private static final int LARGE_CODE_CHAR_THRESHOLD = 9000;
     private static final List<String> NON_CALL_KEYWORDS = List.of(
             "if", "for", "while", "switch", "catch", "new", "return", "throw", "assert"
     );
@@ -108,6 +110,7 @@ public final class CodeVisualizationDialog {
     private final Button stepBackButton = new Button("Step Back");
     private final Button resetButton = new Button("Reset to Original Code");
     private final Button exportPngButton = new Button("Export PNG");
+    private final ToggleButton fileModeToggle = new ToggleButton("File View");
     private final ComboBox<String> speedPresetCombo = new ComboBox<>();
     private final ComboBox<String> scenarioPresetCombo = new ComboBox<>();
     private final Slider stackTimelineSlider = new Slider(0, 0, 0);
@@ -147,6 +150,7 @@ public final class CodeVisualizationDialog {
     private boolean stackFocusMode;
     private boolean compareModeEnabled;
     private Timeline runActivityTimeline;
+    private String timelineSourceCode = "";
 
     private enum VariableShape {
         BUBBLE,
@@ -420,6 +424,35 @@ public final class CodeVisualizationDialog {
         editorScrollPane.getStyleClass().addAll("viz-scroll", "custom-scroll-pane", "editor-scroll-pane");
         VBox.setVgrow(editorScrollPane, Priority.ALWAYS);
 
+        VBox filePreview = createFilePreviewCard(originalCode);
+        StackPane editorContent = new StackPane(editorScrollPane, filePreview);
+        VBox.setVgrow(editorContent, Priority.ALWAYS);
+        boolean largeCode = isLargeCode(originalCode);
+        editorScrollPane.setVisible(!largeCode);
+        editorScrollPane.setManaged(!largeCode);
+        filePreview.setVisible(largeCode);
+        filePreview.setManaged(largeCode);
+
+        fileModeToggle.getStyleClass().add("code-visualizer-step");
+        fileModeToggle.setSelected(largeCode);
+        fileModeToggle.setText(largeCode ? "Text View" : "File View");
+        fileModeToggle.setOnAction(event -> {
+            boolean showFile = fileModeToggle.isSelected();
+            editorScrollPane.setVisible(!showFile);
+            editorScrollPane.setManaged(!showFile);
+            filePreview.setVisible(showFile);
+            filePreview.setManaged(showFile);
+            fileModeToggle.setText(showFile ? "Text View" : "File View");
+        });
+        filePreview.setOnMouseClicked(event -> {
+            fileModeToggle.setSelected(false);
+            editorScrollPane.setVisible(true);
+            editorScrollPane.setManaged(true);
+            filePreview.setVisible(false);
+            filePreview.setManaged(false);
+            fileModeToggle.setText("File View");
+        });
+
         resetButton.getStyleClass().add("code-visualizer-reset");
         resetButton.setOnAction(event -> {
             stopPlayback();
@@ -486,6 +519,7 @@ public final class CodeVisualizationDialog {
             stepBackButton,
             stepForwardButton,
             resetButton,
+            fileModeToggle,
             exportPngButton,
             new Label("Speed"),
             speedPresetCombo
@@ -541,8 +575,50 @@ public final class CodeVisualizationDialog {
         statusRow.getStyleClass().add("code-visualizer-status");
 
         pane.getStyleClass().add("visualizer-pane");
-        pane.getChildren().addAll(titleRow, languageLabel, playbackBar, presetRow, shapeRow, statusRow, editorScrollPane);
+        pane.getChildren().addAll(titleRow, languageLabel, playbackBar, presetRow, shapeRow, statusRow, editorContent);
         return pane;
+    }
+
+    private VBox createFilePreviewCard(String code) {
+        VBox card = new VBox(8);
+        card.getStyleClass().add("code-visualizer-file-card");
+        card.setAlignment(Pos.CENTER);
+
+        Label icon = new Label("FILE");
+        icon.getStyleClass().add("code-visualizer-file-icon");
+
+        Label name = new Label(guessFileName());
+        name.getStyleClass().add("code-visualizer-file-name");
+
+        Label meta = new Label(countLines(code) + " lines  |  " + code.length() + " chars  |  click to edit text");
+        meta.getStyleClass().add("code-visualizer-file-meta");
+
+        card.getChildren().addAll(icon, name, meta);
+        return card;
+    }
+
+    private boolean isLargeCode(String code) {
+        return countLines(code) >= LARGE_CODE_LINE_THRESHOLD || (code != null && code.length() >= LARGE_CODE_CHAR_THRESHOLD);
+    }
+
+    private int countLines(String code) {
+        if (code == null || code.isEmpty()) {
+            return 1;
+        }
+        return code.split("\\R", -1).length;
+    }
+
+    private String guessFileName() {
+        String normalizedLanguage = language.toLowerCase(Locale.ROOT);
+        return switch (normalizedLanguage) {
+            case "java" -> "UserCode.java";
+            case "python", "py" -> "user_code.py";
+            case "javascript", "js" -> "user-code.js";
+            case "typescript", "ts" -> "user-code.ts";
+            case "cpp", "c++" -> "user_code.cpp";
+            case "c" -> "user_code.c";
+            default -> "UserCode.txt";
+        };
     }
 
     private VBox buildVisualizationPane() {
@@ -837,6 +913,7 @@ public final class CodeVisualizationDialog {
     private void rebuildTimelineFromEditor() {
         timeline = CodeTimelineEngine.buildSnapshots(codeEditor.getText());
         recursionDetected = CodeTimelineEngine.detectRecursion(codeEditor.getText());
+        timelineSourceCode = codeEditor.getText();
         timelineIndex = timeline.isEmpty() ? -1 : 0;
         previousStackDepth = 0;
         previousFrameNames = List.of();
@@ -845,7 +922,14 @@ public final class CodeVisualizationDialog {
         renderCurrentSnapshot();
     }
 
+    private void ensureTimelineMatchesEditor() {
+        if (!Objects.equals(timelineSourceCode, codeEditor.getText())) {
+            rebuildTimelineFromEditor();
+        }
+    }
+
     private void stepForward() {
+        ensureTimelineMatchesEditor();
         if (timeline.isEmpty()) {
             rebuildTimelineFromEditor();
             return;
@@ -857,6 +941,7 @@ public final class CodeVisualizationDialog {
     }
 
     private void stepBack() {
+        ensureTimelineMatchesEditor();
         if (timeline.isEmpty()) {
             rebuildTimelineFromEditor();
             return;
@@ -868,6 +953,7 @@ public final class CodeVisualizationDialog {
     }
 
     private void playTimeline() {
+        ensureTimelineMatchesEditor();
         if (timeline.isEmpty()) {
             rebuildTimelineFromEditor();
         }
@@ -1353,7 +1439,7 @@ public final class CodeVisualizationDialog {
             y += 24;
 
             switch (state.type()) {
-                case ARRAY, ARRAY_LIST -> y = drawArrayLike(targetPane, state, y);
+                case ARRAY, TUPLE, ARRAY_LIST -> y = drawArrayLike(targetPane, state, y);
                 case HASH_MAP, HASH_SET -> y = drawHashLike(targetPane, state, y);
                 case LINKED_LIST -> y = drawLinkedList(targetPane, state, y, targetPane == structurePane);
             }
@@ -1875,6 +1961,14 @@ public final class CodeVisualizationDialog {
 
             if (!item.active()) {
                 card.getChildren().add(createStackBadge("RETURNED", "viz-stack-badge-returned"));
+            } else if (!item.status().isBlank()) {
+                card.getChildren().add(createStackBadge(item.status(), "viz-stack-badge-running"));
+            }
+
+            if (!item.returnValue().isBlank()) {
+                Label returnLine = new Label("returns " + compactLabel(item.returnValue(), 18));
+                returnLine.getStyleClass().add("viz-stack-local-line");
+                card.getChildren().add(returnLine);
             }
 
             Label localHeader = new Label("Locals");
@@ -1959,6 +2053,7 @@ public final class CodeVisualizationDialog {
             while (activeInvocationIndices.size() > commonPrefix) {
                 int popIndex = activeInvocationIndices.removeLast();
                 history.get(popIndex).active = false;
+                history.get(popIndex).status = "RETURNED";
             }
 
             for (int frameIdx = commonPrefix; frameIdx < currentFrames.size(); frameIdx++) {
@@ -1975,6 +2070,8 @@ public final class CodeVisualizationDialog {
                     break;
                 }
                 history.get(activeIndex).locals = new LinkedHashMap<>(currentFrames.get(position).locals());
+                history.get(activeIndex).status = currentFrames.get(position).status();
+                history.get(activeIndex).returnValue = currentFrames.get(position).returnValue();
                 position++;
             }
 
@@ -1983,12 +2080,14 @@ public final class CodeVisualizationDialog {
 
         List<StackHistoryItem> finalized = new ArrayList<>(history.size());
         for (StackHistoryMutable item : history) {
-            finalized.add(new StackHistoryItem(
+                finalized.add(new StackHistoryItem(
                     item.name,
                     item.firstSeenStep,
                     item.invocationId,
                     item.active,
-                    new LinkedHashMap<>(item.locals)
+                    new LinkedHashMap<>(item.locals),
+                    item.status,
+                    item.returnValue
             ));
         }
         return finalized;
@@ -2063,11 +2162,14 @@ public final class CodeVisualizationDialog {
     private record VariableState(String name, String value, boolean isGarbage) {
     }
 
-    private record CallFrameState(String name, Map<String, String> locals) {
+    private record CallFrameState(String name, Map<String, String> locals, String status, String returnValue) {
+        private CallFrameState(String name, Map<String, String> locals) {
+            this(name, locals, "RUNNING", "");
+        }
     }
 
     private record StackHistoryItem(String name, int firstSeenStep, int invocationId, boolean active,
-                                    Map<String, String> locals) {
+                                    Map<String, String> locals, String status, String returnValue) {
     }
 
     private record ValueChange(String previous, String current) {
@@ -2079,6 +2181,8 @@ public final class CodeVisualizationDialog {
         private final int invocationId;
         private boolean active = true;
         private Map<String, String> locals = new LinkedHashMap<>();
+        private String status = "RUNNING";
+        private String returnValue = "";
 
         private StackHistoryMutable(String name, int firstSeenStep, int invocationId) {
             this.name = name;
@@ -2089,6 +2193,7 @@ public final class CodeVisualizationDialog {
 
     private enum DataStructureType {
         ARRAY("Array"),
+        TUPLE("Tuple"),
         ARRAY_LIST("ArrayList"),
         HASH_MAP("HashMap"),
         HASH_SET("HashSet"),
@@ -2114,6 +2219,9 @@ public final class CodeVisualizationDialog {
     private static final class CodeTimelineEngine {
         private static final Pattern METHOD_DECLARATION_PATTERN = Pattern.compile(
                 "^(?:public|private|protected|static|final|synchronized|native|abstract|\\s)+[A-Za-z_$][\\w$<>\\[\\]]*\\s+([A-Za-z_$][\\w$]*)\\s*\\([^;]*\\)\\s*\\{?");
+        private static final Pattern COLLECTION_ADD_PATTERN = Pattern.compile("([A-Za-z_$][\\w$]*)\\.add\\((.+)\\)\\s*;?");
+        private static final Pattern MAP_PUT_PATTERN = Pattern.compile("([A-Za-z_$][\\w$]*)\\.put\\((.+?),\\s*(.+)\\)\\s*;?");
+        private static final Pattern PYTHON_ASSIGNMENT_PATTERN = Pattern.compile("^([A-Za-z_$][\\w$]*)\\s*=\\s*(.+)$");
 
         private CodeTimelineEngine() {
         }
@@ -2158,6 +2266,13 @@ public final class CodeVisualizationDialog {
 
         static List<ExecutionSnapshot> buildSnapshots(String codeText) {
             String safeCode = codeText == null ? "" : codeText;
+            if (detectRecursion(safeCode)) {
+                Optional<List<ExecutionSnapshot>> recursionTimeline = buildKnownRecursionTimeline(safeCode);
+                if (recursionTimeline.isPresent()) {
+                    return recursionTimeline.get();
+                }
+            }
+
             String[] lines = safeCode.split("\\R", -1);
             List<ExecutionSnapshot> snapshots = new ArrayList<>();
 
@@ -2180,6 +2295,7 @@ public final class CodeVisualizationDialog {
                 scopeDepth = Math.max(0, scopeDepth - countChar(line, '}'));
 
                 parseVariableMutation(line, scopeDepth, i, tracker);
+                parseCollectionMutation(line, scopeDepth, i, tracker);
                 detectCallStackChange(line, callStack);
                 scopeDepth += countChar(line, '{');
 
@@ -2190,6 +2306,140 @@ public final class CodeVisualizationDialog {
                 snapshots.add(new ExecutionSnapshot(0, List.of(), List.of(), List.of(new CallFrameState("main()", Map.of()))));
             }
             return snapshots;
+        }
+
+        private static Optional<List<ExecutionSnapshot>> buildKnownRecursionTimeline(String codeText) {
+            Matcher numberMatcher = Pattern.compile("\\b(?:int|long)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(\\d+)\\s*;").matcher(codeText);
+            int startValue = 5;
+            String argumentName = "number";
+            if (numberMatcher.find()) {
+                argumentName = numberMatcher.group(1);
+                startValue = Integer.parseInt(numberMatcher.group(2));
+            }
+
+            Matcher methodMatcher = Pattern.compile("(?:int|long)\\s+([A-Za-z_$][\\w$]*)\\s*\\(\\s*(?:int|long)\\s+([A-Za-z_$][\\w$]*)\\s*\\)").matcher(codeText);
+            String functionName = "";
+            String parameterName = "n";
+            while (methodMatcher.find()) {
+                String candidate = methodMatcher.group(1);
+                if (codeText.contains(candidate + "(" + methodMatcher.group(2) + " - 1")
+                        || codeText.contains(candidate + "(" + methodMatcher.group(2) + "-1")) {
+                    functionName = candidate;
+                    parameterName = methodMatcher.group(2);
+                    break;
+                }
+            }
+            if (functionName.isBlank()) {
+                return Optional.empty();
+            }
+
+            int mainLine = findLineNumber(codeText, "main(");
+            int assignmentLine = findLineNumber(codeText, argumentName + " =");
+            int callLine = findLineNumber(codeText, functionName + "(" + argumentName);
+            int methodLine = findLineNumber(codeText, functionName + "(");
+            int baseLine = findLineNumber(codeText, "return 1");
+            int recursiveLine = findLineNumber(codeText, "return " + parameterName);
+            int printLine = findLineNumber(codeText, "print");
+
+            List<ExecutionSnapshot> snapshots = new ArrayList<>();
+            LinkedHashMap<String, String> mainLocals = new LinkedHashMap<>();
+            snapshots.add(new ExecutionSnapshot(
+                    Math.max(1, mainLine),
+                    List.of(),
+                    List.of(),
+                    List.of(new CallFrameState("main()", Map.of(), "RUNNING", ""))
+            ));
+
+            mainLocals.put(argumentName, String.valueOf(startValue));
+            snapshots.add(new ExecutionSnapshot(
+                    Math.max(1, assignmentLine),
+                    List.of(new VariableState(argumentName, String.valueOf(startValue), false)),
+                    List.of(),
+                    List.of(new CallFrameState("main()", new LinkedHashMap<>(mainLocals), "RUNNING", ""))
+            ));
+
+            Deque<CallFrameState> stack = new ArrayDeque<>();
+            stack.addLast(new CallFrameState("main()", new LinkedHashMap<>(mainLocals), "RUNNING", ""));
+            for (int n = startValue; n >= 1; n--) {
+                LinkedHashMap<String, String> locals = new LinkedHashMap<>();
+                locals.put(parameterName, String.valueOf(n));
+                locals.put("pending", n <= 1 ? "base case" : n + " * " + functionName + "(" + (n - 1) + ")");
+                stack.addLast(new CallFrameState(functionName + "(" + n + ")", locals, "RUNNING", ""));
+                snapshots.add(new ExecutionSnapshot(
+                        n == startValue ? Math.max(1, callLine) : Math.max(1, recursiveLine),
+                        buildRecursionVariables(argumentName, startValue, parameterName, n, null),
+                        List.of(),
+                        new ArrayList<>(stack)
+                ));
+            }
+
+            long returnValue = 1;
+            for (int n = 1; n <= startValue; n++) {
+                returnValue = n == 1 ? 1 : returnValue * n;
+                List<CallFrameState> frames = new ArrayList<>();
+                frames.add(new CallFrameState("main()", new LinkedHashMap<>(mainLocals), "RUNNING", ""));
+                for (int active = startValue; active > n; active--) {
+                    LinkedHashMap<String, String> locals = new LinkedHashMap<>();
+                    locals.put(parameterName, String.valueOf(active));
+                    locals.put("waitingFor", functionName + "(" + (active - 1) + ")");
+                    frames.add(new CallFrameState(functionName + "(" + active + ")", locals, "RUNNING", ""));
+                }
+                LinkedHashMap<String, String> returnedLocals = new LinkedHashMap<>();
+                returnedLocals.put(parameterName, String.valueOf(n));
+                returnedLocals.put("computed", String.valueOf(returnValue));
+                frames.add(new CallFrameState(functionName + "(" + n + ")", returnedLocals, "RETURNED", String.valueOf(returnValue)));
+                snapshots.add(new ExecutionSnapshot(
+                        n == 1 ? Math.max(1, baseLine) : Math.max(1, recursiveLine),
+                        buildRecursionVariables(argumentName, startValue, parameterName, n, returnValue),
+                        List.of(),
+                        frames
+                ));
+            }
+
+            mainLocals.put("factorial", String.valueOf(returnValue));
+            snapshots.add(new ExecutionSnapshot(
+                    Math.max(1, callLine),
+                    List.of(
+                            new VariableState(argumentName, String.valueOf(startValue), false),
+                            new VariableState("factorial", String.valueOf(returnValue), false)
+                    ),
+                    List.of(),
+                    List.of(new CallFrameState("main()", new LinkedHashMap<>(mainLocals), "RUNNING", ""))
+            ));
+            snapshots.add(new ExecutionSnapshot(
+                    Math.max(1, printLine),
+                    List.of(
+                            new VariableState(argumentName, String.valueOf(startValue), false),
+                            new VariableState("factorial", String.valueOf(returnValue), false)
+                    ),
+                    List.of(),
+                    List.of(new CallFrameState("main()", new LinkedHashMap<>(mainLocals), "RETURNED", ""))
+            ));
+            return Optional.of(snapshots);
+        }
+
+        private static List<VariableState> buildRecursionVariables(String argumentName,
+                                                                   int originalValue,
+                                                                   String parameterName,
+                                                                   int currentValue,
+                                                                   Long returnValue) {
+            List<VariableState> variables = new ArrayList<>();
+            variables.add(new VariableState(argumentName, String.valueOf(originalValue), false));
+            variables.add(new VariableState(parameterName, String.valueOf(currentValue), false));
+            if (returnValue != null) {
+                variables.add(new VariableState("returnValue", String.valueOf(returnValue), false));
+            }
+            return variables;
+        }
+
+        private static int findLineNumber(String codeText, String needle) {
+            String[] lines = codeText.split("\\R", -1);
+            for (int i = 0; i < lines.length; i++) {
+                if (lines[i].contains(needle)) {
+                    return i + 1;
+                }
+            }
+            return 1;
         }
 
         private static void parseVariableMutation(String line,
@@ -2204,6 +2454,7 @@ public final class CodeVisualizationDialog {
                 variable.value = value;
                 variable.scopeDepth = scopeDepth;
                 variable.lastTouchedLine = lineIndex;
+                applyDeclaredStructure(line, variable);
                 return;
             }
 
@@ -2216,6 +2467,108 @@ public final class CodeVisualizationDialog {
                 VariableTracker variable = tracker.computeIfAbsent(baseName, key -> new VariableTracker(baseName));
                 variable.value = value;
                 variable.lastTouchedLine = lineIndex;
+                applyDeclaredStructure(line, variable);
+                return;
+            }
+
+            Matcher pythonAssignment = PYTHON_ASSIGNMENT_PATTERN.matcher(line);
+            if (pythonAssignment.matches()
+                    && !line.startsWith("if ")
+                    && !line.startsWith("for ")
+                    && !line.startsWith("while ")
+                    && !line.startsWith("return ")) {
+                String name = pythonAssignment.group(1);
+                String value = normalizeValue(pythonAssignment.group(2));
+                VariableTracker variable = tracker.computeIfAbsent(name, key -> new VariableTracker(name));
+                variable.value = value;
+                variable.scopeDepth = scopeDepth;
+                variable.lastTouchedLine = lineIndex;
+                applyDeclaredStructure(line, variable);
+            }
+        }
+
+        private static void parseCollectionMutation(String line,
+                                                    int scopeDepth,
+                                                    int lineIndex,
+                                                    LinkedHashMap<String, VariableTracker> tracker) {
+            Matcher putMatcher = MAP_PUT_PATTERN.matcher(line);
+            if (putMatcher.find()) {
+                String name = putMatcher.group(1);
+                VariableTracker variable = tracker.computeIfAbsent(name, key -> new VariableTracker(name));
+                variable.structureType = DataStructureType.HASH_MAP;
+                variable.scopeDepth = Math.min(variable.scopeDepth, scopeDepth);
+                variable.lastTouchedLine = lineIndex;
+                variable.entries.put(cleanLiteral(putMatcher.group(2)), cleanLiteral(putMatcher.group(3)));
+                variable.value = variable.entries.toString();
+                return;
+            }
+
+            Matcher addMatcher = COLLECTION_ADD_PATTERN.matcher(line);
+            if (addMatcher.find()) {
+                String name = addMatcher.group(1);
+                VariableTracker variable = tracker.computeIfAbsent(name, key -> new VariableTracker(name));
+                if (variable.structureType == null) {
+                    variable.structureType = name.toLowerCase(Locale.ROOT).contains("set")
+                            ? DataStructureType.HASH_SET
+                            : name.toLowerCase(Locale.ROOT).contains("linked")
+                                ? DataStructureType.LINKED_LIST
+                                : DataStructureType.ARRAY_LIST;
+                }
+                variable.scopeDepth = Math.min(variable.scopeDepth, scopeDepth);
+                variable.lastTouchedLine = lineIndex;
+                String item = cleanLiteral(addMatcher.group(2));
+                if (variable.structureType == DataStructureType.HASH_SET) {
+                    if (!variable.values.contains(item)) {
+                        variable.values.add(item);
+                    }
+                } else {
+                    variable.values.add(item);
+                }
+                variable.value = variable.structureType.label + variable.values;
+            }
+        }
+
+        private static void applyDeclaredStructure(String line, VariableTracker variable) {
+            String lowerLine = line.toLowerCase(Locale.ROOT);
+            String lowerValue = variable.value.toLowerCase(Locale.ROOT);
+            if (lowerLine.contains("linkedlist") || lowerValue.contains("linkedlist")) {
+                variable.structureType = DataStructureType.LINKED_LIST;
+                variable.doublyLinked = lowerLine.contains("linkedlist")
+                        || lowerLine.contains("doubly")
+                        || lowerValue.contains("doubly")
+                        || variable.value.contains("<->");
+                variable.values.clear();
+                variable.values.addAll(parseLinkedValues(variable.value));
+            } else if (lowerLine.contains("arraylist") || lowerValue.contains("arraylist")) {
+                variable.structureType = DataStructureType.ARRAY_LIST;
+                variable.values.clear();
+                variable.values.addAll(parseBracketValues(variable.value));
+            } else if (lowerLine.contains("hashmap") || lowerValue.contains("hashmap")) {
+                variable.structureType = DataStructureType.HASH_MAP;
+                variable.entries.clear();
+                variable.entries.putAll(parseMapEntries(variable.value));
+            } else if (lowerLine.contains("hashset") || lowerValue.contains("hashset")) {
+                variable.structureType = DataStructureType.HASH_SET;
+                variable.values.clear();
+                variable.values.addAll(parseSetValues(variable.value));
+            } else if (variable.value.startsWith("[") && variable.value.endsWith("]")) {
+                variable.structureType = DataStructureType.ARRAY;
+                variable.values.clear();
+                variable.values.addAll(parseArrayValues(variable.value));
+            } else if (variable.value.startsWith("(") && variable.value.endsWith(")")) {
+                variable.structureType = DataStructureType.TUPLE;
+                variable.values.clear();
+                variable.values.addAll(parseTupleValues(variable.value));
+            } else if (variable.value.startsWith("{") && variable.value.endsWith("}")) {
+                if (variable.value.contains(":") || variable.value.contains("=")) {
+                    variable.structureType = DataStructureType.HASH_MAP;
+                    variable.entries.clear();
+                    variable.entries.putAll(parseMapEntries(variable.value));
+                } else {
+                    variable.structureType = DataStructureType.HASH_SET;
+                    variable.values.clear();
+                    variable.values.addAll(parseSetValues(variable.value));
+                }
             }
         }
 
@@ -2264,7 +2617,23 @@ public final class CodeVisualizationDialog {
                 boolean garbage = outOfScope || staleValue || explicitGarbage;
 
                 variables.add(new VariableState(variable.name, variable.value, garbage));
-                inferDataStructure(variable.name, variable.value).ifPresent(structures::add);
+                if (variable.structureType != null) {
+                    List<String> values = variable.values.isEmpty() ? parseValuesForType(variable.structureType, variable.value) : List.copyOf(variable.values);
+                    Map<String, String> entries = variable.entries.isEmpty() ? parseEntriesForType(variable.structureType, variable.value) : new LinkedHashMap<>(variable.entries);
+                    int capacity = variable.structureType == DataStructureType.ARRAY_LIST
+                            ? Math.max(values.size(), values.size() + 2)
+                            : Math.max(4, entries.size());
+                    structures.add(new DataStructureState(
+                            variable.name,
+                            variable.structureType,
+                            values,
+                            entries,
+                            capacity,
+                            variable.structureType == DataStructureType.LINKED_LIST && variable.doublyLinked
+                    ));
+                } else {
+                    inferDataStructure(variable.name, variable.value).ifPresent(structures::add);
+                }
             }
 
             List<CallFrameState> frames = new ArrayList<>();
@@ -2327,13 +2696,24 @@ public final class CodeVisualizationDialog {
                 ));
             }
 
+            if (value.startsWith("(") && value.endsWith(")")) {
+                return Optional.of(new DataStructureState(
+                        name,
+                        DataStructureType.TUPLE,
+                        parseTupleValues(value),
+                        Map.of(),
+                    parseTupleValues(value).size(),
+                    false
+                ));
+            }
+
             if (lower.contains("arraylist") || nameLower.contains("list")) {
                 List<String> values = parseBracketValues(value);
                 int capacity = Math.max(values.size(), values.size() + 2);
                 return Optional.of(new DataStructureState(name, DataStructureType.ARRAY_LIST, values, Map.of(), capacity, false));
             }
 
-            if (lower.contains("hashmap") || (value.startsWith("{") && value.contains("="))) {
+            if (lower.contains("hashmap") || (value.startsWith("{") && (value.contains("=") || value.contains(":")))) {
                 Map<String, String> entries = parseMapEntries(value);
                 return Optional.of(new DataStructureState(name, DataStructureType.HASH_MAP, List.of(), entries, 4, false));
             }
@@ -2347,6 +2727,31 @@ public final class CodeVisualizationDialog {
             }
 
             return Optional.empty();
+        }
+
+        private static List<String> parseValuesForType(DataStructureType type, String value) {
+            return switch (type) {
+                case ARRAY -> parseArrayValues(value);
+                case TUPLE -> parseTupleValues(value);
+                case ARRAY_LIST -> parseBracketValues(value);
+                case LINKED_LIST -> parseLinkedValues(value);
+                case HASH_SET -> parseSetValues(value);
+                case HASH_MAP -> List.of();
+            };
+        }
+
+        private static Map<String, String> parseEntriesForType(DataStructureType type, String value) {
+            if (type == DataStructureType.HASH_MAP) {
+                return parseMapEntries(value);
+            }
+            if (type == DataStructureType.HASH_SET) {
+                LinkedHashMap<String, String> entries = new LinkedHashMap<>();
+                for (String item : parseSetValues(value)) {
+                    entries.put(item, item);
+                }
+                return entries;
+            }
+            return Map.of();
         }
 
         private static List<String> parseLinkedValues(String value) {
@@ -2392,6 +2797,21 @@ public final class CodeVisualizationDialog {
                     .toList();
         }
 
+        private static List<String> parseTupleValues(String value) {
+            if (value == null || value.length() < 2) {
+                return List.of();
+            }
+            String body = value.substring(1, value.length() - 1).trim();
+            if (body.isEmpty()) {
+                return List.of();
+            }
+            return Arrays.stream(body.split(","))
+                    .map(String::trim)
+                    .filter(item -> !item.isEmpty())
+                    .map(CodeTimelineEngine::cleanLiteral)
+                    .toList();
+        }
+
         private static List<String> parseBracketValues(String value) {
             int first = value.indexOf('[');
             int last = value.lastIndexOf(']');
@@ -2420,12 +2840,16 @@ public final class CodeVisualizationDialog {
                     continue;
                 }
                 int separator = candidate.indexOf('=');
+                if (separator < 0) {
+                    separator = candidate.indexOf(':');
+                }
                 if (separator > 0) {
-                    String key = candidate.substring(0, separator).trim();
-                    String val = candidate.substring(separator + 1).trim();
+                    String key = cleanLiteral(candidate.substring(0, separator));
+                    String val = cleanLiteral(candidate.substring(separator + 1));
                     entries.put(key, val);
                 } else {
-                    entries.put(candidate, candidate);
+                    String cleaned = cleanLiteral(candidate);
+                    entries.put(cleaned, cleaned);
                 }
             }
             return entries;
@@ -2443,8 +2867,24 @@ public final class CodeVisualizationDialog {
             }
             return Arrays.stream(body.split(","))
                     .map(String::trim)
+                    .map(CodeTimelineEngine::cleanLiteral)
                     .filter(item -> !item.isBlank())
                     .toList();
+        }
+
+        private static String cleanLiteral(String value) {
+            if (value == null) {
+                return "";
+            }
+            String cleaned = value.trim();
+            if (cleaned.endsWith(";")) {
+                cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
+            }
+            if ((cleaned.startsWith("\"") && cleaned.endsWith("\""))
+                    || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+                cleaned = cleaned.substring(1, cleaned.length() - 1);
+            }
+            return cleaned;
         }
 
         private static String normalizeValue(String value) {
@@ -2473,6 +2913,10 @@ public final class CodeVisualizationDialog {
             private String value = "(uninitialized)";
             private int scopeDepth;
             private int lastTouchedLine;
+            private DataStructureType structureType;
+            private final List<String> values = new ArrayList<>();
+            private final LinkedHashMap<String, String> entries = new LinkedHashMap<>();
+            private boolean doublyLinked;
 
             private VariableTracker(String name) {
                 this.name = name;

@@ -651,6 +651,41 @@
     -fx-background-color: transparent;
 }
 
+.viz-stack-badge-running {
+    -fx-text-fill: #ffffff;
+    -fx-background-color: -app-accent;
+}
+
+.code-visualizer-file-card {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 28;
+    -fx-cursor: hand;
+}
+
+.code-visualizer-file-card:hover {
+    -fx-background-color: -app-muted-hover;
+}
+
+.code-visualizer-file-icon {
+    -fx-text-fill: -app-accent;
+    -fx-font-size: 26px;
+    -fx-font-weight: 900;
+}
+
+.code-visualizer-file-name {
+    -fx-text-fill: -app-text-primary;
+    -fx-font-size: 15px;
+    -fx-font-weight: 800;
+}
+
+.code-visualizer-file-meta {
+    -fx-text-fill: -app-text-secondary;
+    -fx-font-size: 11px;
+}
+
 .window-root.viz-font-small .code-visualizer-title,
 .window-root.viz-font-small .viz-panel-title {
     -fx-font-size: 13px;
