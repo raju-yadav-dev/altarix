@@ -4,6 +4,9 @@
 build/
 bin/
 out/
+Installer/
+runtime/
+build-installer.bat
 
 # IDE files
 .idea/

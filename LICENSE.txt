@@ -1,0 +1,54 @@
+ALTARIX AI TERMINAL - SOFTWARE LICENSE AGREEMENT
+
+Version 1.0 - Effective Date: May 2026
+
+This License Agreement ("Agreement") is entered into as of the date you install 
+this software between Altarix AI ("Company") and you ("User").
+
+1. GRANT OF LICENSE
+
+The Company grants you a limited, non-exclusive, non-transferable license to use 
+this software (Altarix AI Terminal) for personal and commercial purposes, subject 
+to the terms and conditions of this Agreement.
+
+2. RESTRICTIONS
+
+You agree not to:
+- Reverse engineer, disassemble, or decompile the software
+- Sell, rent, lease, or lend the software to any third party
+- Modify or create derivative works based on the software
+- Remove or alter any proprietary notices or labels
+- Use the software for any illegal purposes
+
+3. INTELLECTUAL PROPERTY
+
+All intellectual property rights in the software, including copyrights, patents, 
+and trademarks, are owned by the Company or its suppliers. Your use of the 
+software does not grant you ownership of any intellectual property.
+
+4. WARRANTY DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS-IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED 
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO FITNESS FOR A PARTICULAR PURPOSE AND 
+NON-INFRINGEMENT.
+
+5. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL THE COMPANY BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, 
+CONSEQUENTIAL, OR PUNITIVE DAMAGES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH 
+DAMAGES.
+
+6. TERMINATION
+
+This license is effective until terminated. Your rights under this license will 
+terminate automatically without notice if you fail to comply with any terms.
+
+7. GOVERNING LAW
+
+This Agreement shall be governed by and construed in accordance with the laws 
+of the United States.
+
+By installing this software, you acknowledge that you have read, understood, 
+and agree to be bound by the terms and conditions of this License Agreement.
+
+For more information, visit: www.altarix.ai

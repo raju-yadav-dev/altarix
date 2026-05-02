@@ -121,7 +121,7 @@ def jpackageExecutable = providers.provider {
 }
 
 def windowsInstallerArgs = { String installerType ->
-    [
+    def args = [
         '--name', appName,
         '--input', layout.buildDirectory.dir('libs').get().asFile.absolutePath,
         '--main-jar', jarTask.get().archiveFileName.get(),
@@ -129,12 +129,18 @@ def windowsInstallerArgs = { String installerType ->
         '--dest', installerOutputDir.get().asFile.absolutePath,
         '--app-version', appVersion,
         '--vendor', vendorName,
+        '--description', 'Altarix AI Terminal - Advanced AI-powered communication and assistance platform',
         '--java-options', '--enable-native-access=javafx.graphics,javafx.web',
         '--icon', windowsIconFile.absolutePath,
         '--win-menu',
         '--win-shortcut',
-        '--win-menu-group', appName
+        '--win-shortcut-prompt',
+        '--win-menu-group', appName,
+        '--win-dir-chooser',
+        '--win-per-user-install',
+        '--license-file', 'LICENSE.txt'
     ]
+    return args
 }
 
 def linuxInstallerArgs = { String installerType ->
