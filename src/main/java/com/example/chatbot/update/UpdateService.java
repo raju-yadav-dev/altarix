@@ -19,10 +19,12 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.util.Locale;
@@ -233,9 +235,17 @@ public final class UpdateService {
                 throw new IllegalStateException("Update URL is missing.");
             }
             String ext = "." + OsDetector.getInstallerExtension();
-            Path target = Files.createTempFile("altarix-update-", ext);
+            Path target = createInstallerTarget(update, ext);
             DownloadManager manager = new DownloadManager();
-            return manager.downloadAsync(URI.create(resolvedUrl), target, progress);
+            return manager.downloadAsync(URI.create(resolvedUrl), target, progress)
+                .thenApply(path -> {
+                    try {
+                        validateInstallerFile(path, ext);
+                        return path;
+                    } catch (Exception ex) {
+                        throw new RuntimeException(ex);
+                    }
+                });
         } catch (Exception ex) {
             CompletableFuture<Path> failed = new CompletableFuture<>();
             failed.completeExceptionally(ex);
@@ -259,25 +269,16 @@ public final class UpdateService {
         if (update == null) return "";
         String ext = OsDetector.getInstallerExtension().toLowerCase(Locale.ROOT);
         String osToken = OsDetector.getOsToken().toLowerCase(Locale.ROOT);
+        String targetVersion = normalizeVersion(update.getVersion());
 
-        for (UpdateInfo.UpdateRow row : update.getUpdates()) {
-            if (row == null || row.getDownloadUrl().isEmpty()) {
-                continue;
-            }
+        String matchingCurrentVersion = findMatchingDownloadUrl(update, ext, targetVersion, true);
+        if (!matchingCurrentVersion.isEmpty()) {
+            return matchingCurrentVersion;
+        }
 
-            String type = row.getType();
-            if (type.equals(ext)) {
-                return row.getDownloadUrl();
-            }
-            if (ext.equals("deb") && type.equals("linux")) {
-                return row.getDownloadUrl();
-            }
-            if (ext.equals("dmg") && (type.equals("mac") || type.equals("macos"))) {
-                return row.getDownloadUrl();
-            }
-            if (ext.equals("exe") && type.equals("windows")) {
-                return row.getDownloadUrl();
-            }
+        String matchingAnyVersion = findMatchingDownloadUrl(update, ext, targetVersion, false);
+        if (!matchingAnyVersion.isEmpty()) {
+            return matchingAnyVersion;
         }
 
         String url = update.getDownloadUrl();
@@ -286,11 +287,117 @@ public final class UpdateService {
         if (url.contains("{os}") || url.contains("{ext}")) {
             return url.replace("{os}", osToken).replace("{ext}", ext);
         }
+        if (urlLooksLikeInstaller(url) && !urlLooksLikeInstallerType(url, ext)) {
+            return "";
+        }
         return url;
     }
 
+    private String findMatchingDownloadUrl(UpdateInfo update, String ext, String targetVersion, boolean currentVersionOnly) {
+        for (UpdateInfo.UpdateRow row : update.getUpdates()) {
+            if (row == null || row.getDownloadUrl().isEmpty()) {
+                continue;
+            }
+
+            if (currentVersionOnly && !normalizeVersion(row.getVersion()).equals(targetVersion)) {
+                continue;
+            }
+            String type = row.getType();
+            String downloadUrl = row.getDownloadUrl();
+            if (matchesInstallerType(type, ext) || urlLooksLikeInstallerType(downloadUrl, ext)) {
+                return row.getDownloadUrl();
+            }
+        }
+        return "";
+    }
+
+    private boolean matchesInstallerType(String type, String ext) {
+        String normalized = String.valueOf(type == null ? "" : type).trim().toLowerCase(Locale.ROOT);
+        if (normalized.equals(ext)) return true;
+        if (ext.equals("deb") && normalized.equals("linux")) return true;
+        if (ext.equals("dmg") && (normalized.equals("mac") || normalized.equals("macos"))) return true;
+        return ext.equals("exe") && (normalized.equals("windows") || normalized.equals("win"));
+    }
+
+    private boolean urlLooksLikeInstaller(String url) {
+        return String.valueOf(url).toLowerCase(Locale.ROOT).matches(".*\\.(exe|msi|deb|dmg|pkg|apk|aab)([?#].*)?$");
+    }
+
+    private boolean urlLooksLikeInstallerType(String url, String ext) {
+        return String.valueOf(url).toLowerCase(Locale.ROOT).matches(".*\\." + ext + "([?#].*)?$");
+    }
+
+    private String normalizeVersion(String version) {
+        String value = String.valueOf(version == null ? "" : version).trim().toLowerCase(Locale.ROOT);
+        return value.startsWith("v") ? value.substring(1) : value;
+    }
+
+    private Path createInstallerTarget(UpdateInfo update, String ext) throws Exception {
+        String version = normalizeVersion(update == null ? "" : update.getVersion()).replaceAll("[^0-9a-zA-Z._-]", "");
+        if (version.isEmpty()) {
+            version = "latest";
+        }
+        Path target = Path.of(System.getProperty("java.io.tmpdir"), "Altarix-" + version + "-installer" + ext);
+        Files.deleteIfExists(target);
+        return target;
+    }
+
+    private void validateInstallerFile(Path installerPath, String ext) throws Exception {
+        if (installerPath == null || !Files.isRegularFile(installerPath)) {
+            throw new IllegalStateException("Downloaded installer was not created.");
+        }
+        long size = Files.size(installerPath);
+        if (size <= 0) {
+            throw new IllegalStateException("Downloaded installer is empty.");
+        }
+        if (".exe".equalsIgnoreCase(ext) && !hasWindowsExecutableHeader(installerPath)) {
+            throw new IllegalStateException("Downloaded file is not a Windows installer.");
+        }
+        if (".deb".equalsIgnoreCase(ext) && !hasDebianPackageHeader(installerPath)) {
+            throw new IllegalStateException("Downloaded file is not a Debian package.");
+        }
+    }
+
+    private boolean hasWindowsExecutableHeader(Path installerPath) throws Exception {
+        byte[] header = readHeader(installerPath, 2);
+        return header.length >= 2 && header[0] == 'M' && header[1] == 'Z';
+    }
+
+    private boolean hasDebianPackageHeader(Path installerPath) throws Exception {
+        byte[] header = readHeader(installerPath, 8);
+        if (header.length < 8) {
+            return false;
+        }
+        String magic = new String(header, 0, 8, StandardCharsets.US_ASCII);
+        return "!<arch>\n".equals(magic);
+    }
+
+    private byte[] readHeader(Path path, int length) throws Exception {
+        byte[] buffer = new byte[length];
+        try (InputStream input = Files.newInputStream(path)) {
+            int read = input.read(buffer);
+            if (read <= 0) {
+                return new byte[0];
+            }
+            if (read == length) {
+                return buffer;
+            }
+            byte[] partial = new byte[read];
+            System.arraycopy(buffer, 0, partial, 0, read);
+            return partial;
+        }
+    }
+
     public void launchInstallerAndExit(Path installerPath) throws Exception {
-        new ProcessBuilder(installerPath.toString()).start();
+        if (installerPath == null || !Files.isRegularFile(installerPath)) {
+            throw new IllegalStateException("Installer file is missing.");
+        }
+
+        if (OsDetector.getOsType() == OsDetector.OsType.WINDOWS) {
+            new ProcessBuilder("cmd", "/c", "start", "", installerPath.toAbsolutePath().toString()).start();
+        } else {
+            new ProcessBuilder(installerPath.toAbsolutePath().toString()).start();
+        }
         Platform.exit();
         System.exit(0);
     }
