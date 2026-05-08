@@ -18,6 +18,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
+import java.net.URL;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -151,9 +152,13 @@ public class MainLayout {
         double sceneHeight = AppConfig.calculateResponsiveHeight(visualBounds.getHeight());
 
         Scene scene = new Scene(root, sceneWidth, sceneHeight);
-        scene.getStylesheets().add(getClass().getResource(currentThemeCss).toExternalForm());
+        
+        URL themeUrl = MainLayout.class.getClassLoader().getResource(currentThemeCss);
+        if (themeUrl != null) {
+            scene.getStylesheets().add(themeUrl.toExternalForm());
+        }
 
-        IconResources.addStageIcons(stage, getClass());
+        IconResources.addStageIcons(stage, MainLayout.class);
 
         stage.setTitle(AppConfig.APP_NAME);
         stage.setScene(scene);
@@ -225,7 +230,10 @@ public class MainLayout {
         }
         
         // Add new stylesheet
-        scene.getStylesheets().add(getClass().getResource(currentThemeCss).toExternalForm());
+        URL themeUrl = MainLayout.class.getClassLoader().getResource(currentThemeCss);
+        if (themeUrl != null) {
+            scene.getStylesheets().add(themeUrl.toExternalForm());
+        }
         
         // Toggle light mode class
         if (lightMode) {

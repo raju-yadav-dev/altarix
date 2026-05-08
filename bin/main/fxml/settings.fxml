@@ -3,7 +3,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 
-<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.chatbot.controller.SettingsDialogController"
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.altarix.controller.SettingsDialogController"
             styleClass="settings-root" prefWidth="680" prefHeight="520">
 
     <!-- LEFT: Category list -->

@@ -4,7 +4,7 @@
 <?import javafx.scene.image.*?>
 <?import javafx.scene.layout.*?>
 
-<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.chatbot.controller.ChatController" styleClass="chat-root">
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.altarix.controller.ChatController" styleClass="chat-root">
     <center>
         <SplitPane fx:id="chatSplitPane" orientation="HORIZONTAL" styleClass="chat-split-pane">
             <items>

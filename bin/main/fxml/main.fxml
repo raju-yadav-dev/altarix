@@ -5,7 +5,7 @@
 <?import javafx.scene.image.*?>
 <?import javafx.scene.layout.*?>
 
-<StackPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.chatbot.controller.MainController" fx:id="windowRoot" styleClass="window-root">
+<StackPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.altarix.controller.MainController" fx:id="windowRoot" styleClass="window-root">
     <BorderPane fx:id="appShell" styleClass="app-shell">
         <!-- ================= TITLE BAR ================= -->
         <top>

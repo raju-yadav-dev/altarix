@@ -59,7 +59,7 @@ public class SidebarView extends VBox {
         
         // Icon image
         try {
-            Image iconImage = IconResources.loadBestFit(getClass(), 32);
+            Image iconImage = IconResources.loadBestFit(32);
             if (iconImage != null) {
                 ImageView iconView = new ImageView(iconImage);
                 iconView.setFitWidth(24);

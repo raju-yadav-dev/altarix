@@ -1,0 +1,165 @@
+name: Build Release Artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-artifacts:
+    name: Windows (.exe, .msi)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Build Windows installers
+        shell: pwsh
+        run: |
+          ./gradlew.bat clean jar packageExe packageMsi --stacktrace
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: altarix-windows-installers
+          path: |
+            build/installers/*.exe
+            build/installers/*.msi
+          if-no-files-found: error
+
+  linux-artifacts:
+    name: Linux (.deb, .rpm, .tar.gz)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm fakeroot
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Build Linux .deb
+        run: ./gradlew clean jar packageDeb --stacktrace
+
+      - name: Build Linux .rpm with jpackage
+        shell: bash
+        run: |
+          APP_VERSION="$(grep '^version=' version.properties | cut -d'=' -f2)"
+          JAR_NAME="$(ls build/libs/*.jar | head -n 1 | xargs -n 1 basename)"
+          jpackage \
+            --name Altarix \
+            --input build/libs \
+            --main-jar "${JAR_NAME}" \
+            --type rpm \
+            --dest build/installers \
+            --app-version "${APP_VERSION}" \
+            --vendor "Altarix AI" \
+            --java-options "--enable-native-access=javafx.graphics,javafx.web" \
+            --icon src/main/resources/icon/Altarix-1024.png \
+            --linux-shortcut
+
+      - name: Build Linux .tar.gz
+        shell: bash
+        run: |
+          APP_VERSION="$(grep '^version=' version.properties | cut -d'=' -f2)"
+          JAR_NAME="$(ls build/libs/*.jar | head -n 1 | xargs -n 1 basename)"
+          jpackage \
+            --name Altarix \
+            --input build/libs \
+            --main-jar "${JAR_NAME}" \
+            --type app-image \
+            --dest build/installers \
+            --app-version "${APP_VERSION}" \
+            --vendor "Altarix AI" \
+            --java-options "--enable-native-access=javafx.graphics,javafx.web" \
+            --icon src/main/resources/icon/Altarix-1024.png
+          tar -C build/installers -czf "build/installers/Altarix-${APP_VERSION}-linux.tar.gz" Altarix
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: altarix-linux-packages
+          path: |
+            build/installers/*.deb
+            build/installers/*.rpm
+            build/installers/*.tar.gz
+          if-no-files-found: error
+
+  macos-artifacts:
+    name: macOS (.deb, .rpm)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Install fpm for package generation
+        run: |
+          brew install ruby
+          sudo gem install --no-document fpm
+
+      - name: Build app image for packaging
+        shell: bash
+        run: |
+          ./gradlew clean jar --stacktrace
+          APP_VERSION="$(grep '^version=' version.properties | cut -d'=' -f2)"
+          JAR_NAME="$(ls build/libs/*.jar | head -n 1 | xargs -n 1 basename)"
+          mkdir -p build/installers
+          jpackage \
+            --name Altarix \
+            --input build/libs \
+            --main-jar "${JAR_NAME}" \
+            --type app-image \
+            --dest build/installers \
+            --app-version "${APP_VERSION}" \
+            --vendor "Altarix AI" \
+            --java-options "--enable-native-access=javafx.graphics,javafx.web"
+
+      - name: Build macOS-labeled .deb and .rpm artifacts
+        shell: bash
+        run: |
+          APP_VERSION="$(grep '^version=' version.properties | cut -d'=' -f2)"
+          mkdir -p build/macos-package-root/opt/altarix
+          cp -R build/installers/Altarix.app build/macos-package-root/opt/altarix/
+          fpm -s dir -t deb -n altarix-macos -v "${APP_VERSION}" -C build/macos-package-root .
+          fpm -s dir -t rpm -n altarix-macos -v "${APP_VERSION}" -C build/macos-package-root .
+          mkdir -p build/installers
+          mv ./*.deb ./*.rpm build/installers/
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: altarix-macos-packages
+          path: |
+            build/installers/*.deb
+            build/installers/*.rpm
+          if-no-files-found: error

@@ -1,6 +1,6 @@
 ALTARIX AI TERMINAL - SOFTWARE LICENSE AGREEMENT
 
-Version 1.0 - Effective Date: May 2026
+Version 1.5.6 - Effective Date: May 2026
 
 This License Agreement ("Agreement") is entered into as of the date you install 
 this software between Altarix AI ("Company") and you ("User").

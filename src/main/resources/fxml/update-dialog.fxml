@@ -3,7 +3,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 
-<VBox xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.chatbot.update.UpdateDialogController" styleClass="update-dialog-card" spacing="14">
+<VBox xmlns:fx="http://javafx.com/fxml" fx:controller="com.example.altarix.update.UpdateDialogController" styleClass="update-dialog-card" spacing="14">
     <padding>
         <Insets top="18" right="20" bottom="18" left="20" />
     </padding>

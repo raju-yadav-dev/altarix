@@ -1,6 +1,6 @@
 package com.aicodehelper.util;
 
-import com.example.chatbot.update.VersionProperties;
+import com.example.altarix.update.VersionProperties;
 
 /**
  * Application-wide configuration and constants.
@@ -79,8 +79,8 @@ public final class AppConfig {
     // ========== THEME CONFIGURATION ==========
     public static final String DARK_MODE_CLASS = ""; // Default
     public static final String LIGHT_MODE_CLASS = "light-mode";
-    public static final String CSS_PURPLE_THEME = "/styles/app.css";
-    public static final String CSS_GREEN_THEME = "/styles/app-green.css";
+    public static final String CSS_PURPLE_THEME = "styles/app.css";
+    public static final String CSS_GREEN_THEME = "styles/app-green.css";
     
     // Theme Names
     public static final String THEME_PURPLE_DARK = "Purple Dark";

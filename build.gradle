@@ -28,7 +28,7 @@ def java25Metadata = javaToolchains.launcherFor {
 }.map { it.metadata }
 
 application {
-    mainClass = 'com.example.chatbot.AltarixLauncher'
+    mainClass = 'com.example.altarix.AltarixLauncher'
     applicationDefaultJvmArgs = [
         '--enable-native-access=javafx.graphics,javafx.web'
     ]
@@ -86,7 +86,7 @@ jar {
     archiveBaseName = 'Altarix'
     manifest {
         attributes(
-            'Main-Class': 'com.example.chatbot.AltarixLauncher'
+            'Main-Class': 'com.example.altarix.AltarixLauncher'
         )
     }
     duplicatesStrategy = 'exclude'
