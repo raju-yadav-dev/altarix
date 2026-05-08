@@ -89,10 +89,6 @@ jar {
             'Main-Class': 'com.example.altarix.AltarixLauncher'
         )
     }
-    duplicatesStrategy = 'exclude'
-    from {
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
-    }
 }
 
 def appName = 'Altarix'
@@ -110,10 +106,22 @@ def isWindows = currentOs.windows
 def isLinux = currentOs.linux
 def isMac = currentOs.macOsX
 def installerOutputDir = layout.buildDirectory.dir('installers')
+def jpackageInputDir = layout.buildDirectory.dir('jpackage-input')
 def windowsIconFile = file('src/main/resources/icon/Altarix-1024.ico')
 def linuxIconFile = file('src/main/resources/icon/Altarix-1024.png')
 def macIconFile = file('src/main/resources/icon/Altarix.icns')
 def jarTask = tasks.named('jar', Jar)
+
+tasks.register('prepareJpackageInput', Sync) {
+    group = 'distribution'
+    description = 'Prepares app and dependency jars for jpackage input.'
+    dependsOn jarTask
+    from(jarTask.flatMap { it.archiveFile }) {
+        into ''
+    }
+    from(configurations.runtimeClasspath)
+    into(jpackageInputDir)
+}
 
 def jpackageExecutable = providers.provider {
     def binaryName = isWindows ? 'jpackage.exe' : 'jpackage'
@@ -123,7 +131,7 @@ def jpackageExecutable = providers.provider {
 def windowsInstallerArgs = { String installerType ->
     def args = [
         '--name', appName,
-        '--input', layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+        '--input', jpackageInputDir.get().asFile.absolutePath,
         '--main-jar', jarTask.get().archiveFileName.get(),
         '--type', installerType,
         '--dest', installerOutputDir.get().asFile.absolutePath,
@@ -146,7 +154,7 @@ def windowsInstallerArgs = { String installerType ->
 def linuxInstallerArgs = { String installerType ->
     [
         '--name', appName,
-        '--input', layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+        '--input', jpackageInputDir.get().asFile.absolutePath,
         '--main-jar', jarTask.get().archiveFileName.get(),
         '--type', installerType,
         '--dest', installerOutputDir.get().asFile.absolutePath,
@@ -161,7 +169,7 @@ def linuxInstallerArgs = { String installerType ->
 def macInstallerArgs = { String installerType ->
     def args = [
         '--name', appName,
-        '--input', layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+        '--input', jpackageInputDir.get().asFile.absolutePath,
         '--main-jar', jarTask.get().archiveFileName.get(),
         '--type', installerType,
         '--dest', installerOutputDir.get().asFile.absolutePath,
@@ -178,7 +186,7 @@ def macInstallerArgs = { String installerType ->
 tasks.register('packageExe', Exec) {
     group = 'distribution'
     description = 'Builds a Windows .exe installer for Altarix.'
-    dependsOn jarTask
+    dependsOn 'prepareJpackageInput'
     onlyIf { isWindows }
 
     doFirst {
@@ -191,7 +199,7 @@ tasks.register('packageExe', Exec) {
 tasks.register('packageDeb', Exec) {
     group = 'distribution'
     description = 'Builds a Linux .deb installer for Altarix.'
-    dependsOn jarTask
+    dependsOn 'prepareJpackageInput'
     onlyIf { isLinux }
 
     doFirst {
@@ -204,7 +212,7 @@ tasks.register('packageDeb', Exec) {
 tasks.register('packageDmg', Exec) {
     group = 'distribution'
     description = 'Builds a macOS .dmg installer for Altarix.'
-    dependsOn jarTask
+    dependsOn 'prepareJpackageInput'
     onlyIf { isMac }
 
     doFirst {
@@ -217,7 +225,7 @@ tasks.register('packageDmg', Exec) {
 tasks.register('packageMsi', Exec) {
     group = 'distribution'
     description = 'Builds a Windows .msi installer for Altarix.'
-    dependsOn jarTask
+    dependsOn 'prepareJpackageInput'
     onlyIf { isWindows }
 
     doFirst {
